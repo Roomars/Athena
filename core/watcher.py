@@ -1,5 +1,6 @@
 import threading
 from pathlib import Path
+from typing import Optional
 
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
@@ -34,7 +35,7 @@ class _VaultHandler(FileSystemEventHandler):
                 index_file(Path(event.dest_path))
 
 
-_observer: Observer | None = None
+_observer: Optional[Observer] = None
 
 
 def start(vault_path: Path = VAULT_PATH) -> None:

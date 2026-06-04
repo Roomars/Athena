@@ -66,8 +66,9 @@ fn main() {
     tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
+            // App visibile nel Dock e nella menu bar
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
             let child = start_backend();
             *app.state::<BackendProcess>().0.lock().unwrap() = child;
@@ -107,42 +108,33 @@ fn main() {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.show(); let _ = win.set_focus();
                         let _ = win.eval("clearChat()");
-                        #[cfg(target_os = "macos")]
-                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                     }
                 }
                 "close_win" | "hide_win" => {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.hide();
-                        #[cfg(target_os = "macos")]
-                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                     }
                 }
                 _ => {}
             });
 
-            let tray_bytes = include_bytes!("../../static/icons/athena-menubar.png");
+            let tray_bytes = include_bytes!("../icons/tray-icon.png");
             let img = image::load_from_memory(tray_bytes)
-                .expect("athena-menubar.png non valida").into_rgba8();
+                .expect("tray-icon.png non valida").into_rgba8();
             let (w, h) = img.dimensions();
             let tray_icon = tauri::image::Image::new_owned(img.into_raw(), w, h);
 
-            let title_item  = MenuItemBuilder::with_id("title", "Athena OS").enabled(false).build(app)?;
-            let sep1        = PredefinedMenuItem::separator(app)?;
-            let open_item   = MenuItemBuilder::with_id("open", "Apri Athena").build(app)?;
-            let chat_item   = MenuItemBuilder::with_id("new_chat", "Nuova conversazione").build(app)?;
-            let sep2        = PredefinedMenuItem::separator(app)?;
-            let status_item = MenuItemBuilder::with_id("status", "● Pronta").enabled(false).build(app)?;
-            let model_item  = MenuItemBuilder::with_id("model", "qwen3:14b").enabled(false).build(app)?;
-            let sep3        = PredefinedMenuItem::separator(app)?;
-            let quit_item   = MenuItemBuilder::with_id("quit", "Esci").build(app)?;
+            let title_item = MenuItemBuilder::with_id("title", "Athena OS").enabled(false).build(app)?;
+            let sep1       = PredefinedMenuItem::separator(app)?;
+            let open_item  = MenuItemBuilder::with_id("open", "Apri Athena").build(app)?;
+            let chat_item  = MenuItemBuilder::with_id("new_chat", "Nuova conversazione").build(app)?;
+            let sep2       = PredefinedMenuItem::separator(app)?;
+            let quit_item  = MenuItemBuilder::with_id("quit", "Esci").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&title_item).item(&sep1)
                 .item(&open_item).item(&chat_item)
-                .item(&sep2)
-                .item(&status_item).item(&model_item)
-                .item(&sep3).item(&quit_item)
+                .item(&sep2).item(&quit_item)
                 .build()?;
 
             let _tray = TrayIconBuilder::new()
@@ -157,8 +149,6 @@ fn main() {
                             if let Some(win) = app.get_webview_window("main") {
                                 let _ = win.show();
                                 let _ = win.set_focus();
-                                #[cfg(target_os = "macos")]
-                                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                             }
                         }
                         "new_chat" => {
@@ -166,8 +156,6 @@ fn main() {
                                 let _ = win.show();
                                 let _ = win.set_focus();
                                 let _ = win.eval("clearChat()");
-                                #[cfg(target_os = "macos")]
-                                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                             }
                         }
                         "quit" => std::process::exit(0),
@@ -185,13 +173,9 @@ fn main() {
                         if let Some(win) = app.get_webview_window("main") {
                             if win.is_visible().unwrap_or(false) {
                                 let _ = win.hide();
-                                #[cfg(target_os = "macos")]
-                                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                             } else {
                                 let _ = win.show();
                                 let _ = win.set_focus();
-                                #[cfg(target_os = "macos")]
-                                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                             }
                         }
                     }
@@ -204,8 +188,6 @@ fn main() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let _ = win.hide();
                 api.prevent_close();
-                #[cfg(target_os = "macos")]
-                let _ = win.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         })
         .run(tauri::generate_context!())
