@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
@@ -77,6 +77,49 @@ fn main() {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.eval("window.location.href = 'http://localhost:8000'");
             }
+
+            // Menu nativo macOS (barra in alto)
+            let app_menu = SubmenuBuilder::new(app, "Athena")
+                .about(None)
+                .separator()
+                .item(&MenuItemBuilder::with_id("hide_win", "Nascondi Athena").build(app)?)
+                .separator()
+                .quit()
+                .build()?;
+            let file_menu = SubmenuBuilder::new(app, "Conversazione")
+                .item(&MenuItemBuilder::with_id("new_chat_key", "Nuova conversazione")
+                    .accelerator("CmdOrCtrl+N").build(app)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("close_win", "Chiudi finestra")
+                    .accelerator("CmdOrCtrl+W").build(app)?)
+                .build()?;
+            let edit_menu = SubmenuBuilder::new(app, "Modifica")
+                .undo().redo().separator()
+                .cut().copy().paste()
+                .select_all()
+                .build()?;
+            let native_menu = MenuBuilder::new(app)
+                .item(&app_menu).item(&file_menu).item(&edit_menu)
+                .build()?;
+            app.set_menu(native_menu)?;
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "new_chat_key" => {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.show(); let _ = win.set_focus();
+                        let _ = win.eval("clearChat()");
+                        #[cfg(target_os = "macos")]
+                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                    }
+                }
+                "close_win" | "hide_win" => {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.hide();
+                        #[cfg(target_os = "macos")]
+                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    }
+                }
+                _ => {}
+            });
 
             let tray_bytes = include_bytes!("../../static/icons/athena-menubar.png");
             let img = image::load_from_memory(tray_bytes)

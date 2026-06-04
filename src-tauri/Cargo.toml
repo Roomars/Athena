@@ -5,6 +5,10 @@ description = "Athena — Segretaria AI personale"
 edition = "2021"
 rust-version = "1.77.2"
 
+[[bin]]
+name = "Athena"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

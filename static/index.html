@@ -35,6 +35,10 @@
       -webkit-font-smoothing: antialiased;
     }
 
+    /* ─── Titlebar overlay: spazio per i traffic lights ─── */
+    body { padding-top: env(titlebar-area-height, 0px); }
+    .sidebar, .main { padding-top: 0; }
+
     /* ─── Sidebar ─── */
     .sidebar {
       width: 240px; min-width: 240px;
@@ -46,8 +50,12 @@
     .logo {
       display: flex; align-items: center; gap: 10px;
       padding: 0 14px;
-      height: 56px;
+      /* 52px + 28px per traffic lights che si sovrappongono */
+      padding-top: 28px;
+      height: 84px;
       border-bottom: 1px solid var(--border);
+      /* Drag region — trascina la finestra dall'header sidebar */
+      -webkit-app-region: drag;
     }
     .logo img { width: 28px; height: 28px; border-radius: 7px; }
     .logo-name { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; flex: 1; }
@@ -89,6 +97,10 @@
     }
     .nav-item.dim { opacity: 0.38; pointer-events: none; }
     .nav-icon { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.75; }
+    /* I bottoni dentro la drag region non devono bloccarsi */
+    .logo img, .logo-name, .new-chat-btn, .nav-item, #send, textarea {
+      -webkit-app-region: no-drag;
+    }
 
     .sidebar-footer {
       padding: 12px 14px;
