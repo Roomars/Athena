@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -8,8 +10,28 @@ from pydantic import BaseModel
 
 from core.memory import memory
 from core.ollama import chat, chat_stream
+from core import brain, watcher
 
-app = FastAPI(title="Athena")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Avvia il cervello in background all'avvio
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _init_brain)
+    yield
+    watcher.stop()
+
+
+def _init_brain():
+    try:
+        count = brain.index_vault()
+        watcher.start()
+        print(f"[brain] {count} chunks indicizzati — watcher attivo")
+    except Exception as e:
+        print(f"[brain] errore init: {e}")
+
+
+app = FastAPI(title="Athena", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +49,14 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+def _build_rag_context(query: str) -> str:
+    results = brain.search(query, n_results=4)
+    if not results:
+        return ""
+    parts = [f"[{r['source']}]\n{r['text']}" for r in results]
+    return "---\nContesto dal vault:\n" + "\n\n".join(parts) + "\n---"
+
+
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
@@ -37,7 +67,9 @@ async def chat_endpoint(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Messaggio vuoto")
 
-    memory.add("user", req.message)
+    rag = _build_rag_context(req.message)
+    user_msg = f"{rag}\n\n{req.message}" if rag else req.message
+    memory.add("user", user_msg)
 
     if req.stream:
         async def generate():
@@ -58,3 +90,8 @@ async def chat_endpoint(req: ChatRequest):
 async def clear_memory():
     memory.clear()
     return {"status": "ok"}
+
+
+@app.get("/brain/stats")
+async def brain_stats():
+    return brain.stats()
