@@ -3,10 +3,17 @@
     "allow": [
       "Bash(python -m pytest)",
       "Bash(pytest)",
-      "Bash(python -m orbit_desktop.main)",
+      "Bash(uvicorn core.app:app *)",
+      "Bash(./start.sh)",
       "Bash(pip install *)",
+      "Bash(pip show *)",
       "Bash(git status *)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)"
     ]
   },
   "env": {
