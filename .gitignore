@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.env
+.env.*
+
+# Database e memoria locale
+*.db
+*.sqlite
+*.sqlite3
+
+# Brain — dati personali locali
+brain/
+
+# Backup automatici
+backups/
+
+# Tauri — build artifacts
+src-tauri/target/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Claude Code — settings locali (contiene permessi macchina-specifici)
+.claude/settings.local.json
+
+# Log
+*.log
+logs/

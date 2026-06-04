@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!--
+    Corinthian helmet — front view, monochromatic template for macOS menu bar.
+    currentColor = adapts to light/dark automatically when used as template image.
+    Two eye slots punched via evenodd fill rule.
+  -->
+  <path
+    fill="currentColor"
+    fill-rule="evenodd"
+    d="M12 2C6.5 2 2 6.5 2 12
+       L2 17
+       C2 20 4 22 7 22.5
+       L7 24 L11 24 L11 23 L13 23 L13 24 L17 24
+       L17 22.5
+       C20 22 22 20 22 17
+       L22 12
+       C22 6.5 17.5 2 12 2Z
+       M4.5 10 L9.5 10 L9.5 12.5 L4.5 12.5Z
+       M14.5 10 L19.5 10 L19.5 12.5 L14.5 12.5Z"
+  />
+</svg>

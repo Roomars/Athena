@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Athena",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

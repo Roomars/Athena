@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Bronze/gold rounded-square background -->
+  <rect width="512" height="512" rx="112" ry="112" fill="#C4973A"/>
+  <!-- Helmet: same shape as menubar, scaled to fill ~380px centered in 512 -->
+  <!-- Source viewBox 0 0 24 24 → scale 15.83 → 380px; offset = (512-380)/2 = 66 -->
+  <path
+    fill="white"
+    fill-opacity="0.95"
+    fill-rule="evenodd"
+    transform="translate(66 66) scale(15.83)"
+    d="M12 2C6.5 2 2 6.5 2 12
+       L2 17
+       C2 20 4 22 7 22.5
+       L7 24 L11 24 L11 23 L13 23 L13 24 L17 24
+       L17 22.5
+       C20 22 22 20 22 17
+       L22 12
+       C22 6.5 17.5 2 12 2Z
+       M4.5 10 L9.5 10 L9.5 12.5 L4.5 12.5Z
+       M14.5 10 L19.5 10 L19.5 12.5 L14.5 12.5Z"
+  />
+</svg>
