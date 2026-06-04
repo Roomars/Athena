@@ -61,24 +61,28 @@ cargo tauri build
 # ── 4. Output ────────────────────────────────────────────────────────────────
 
 APP_PATH="$(find src-tauri/target/release/bundle/macos -name 'Athena.app' 2>/dev/null | head -1)"
+DMG_PATH="$(find src-tauri/target/release/bundle/dmg -name 'Athena*.dmg' 2>/dev/null | head -1)"
 
 echo ""
 echo -e "${GREEN}══════════════════════════════════════${NC}"
-echo -e "${GREEN}  Athena.app compilata con successo!${NC}"
+echo -e "${GREEN}  Athena compilata con successo!      ${NC}"
 echo -e "${GREEN}══════════════════════════════════════${NC}"
 echo ""
 
-if [ -n "$APP_PATH" ]; then
-    ok ".app:  $APP_PATH"
-    echo ""
-    echo "   Per installarla in /Applications:"
+[ -n "$APP_PATH" ] && ok ".app:  $APP_PATH"
+[ -n "$DMG_PATH" ] && ok ".dmg:  $DMG_PATH"
+
+echo ""
+echo "   ── Installazione ──────────────────────────────"
+if [ -n "$DMG_PATH" ]; then
+    echo "   1. Apri il .dmg:"
+    echo "      open \"$DMG_PATH\""
+    echo "   2. Trascina Athena in /Applications"
+else
     echo "   cp -r \"$APP_PATH\" /Applications/"
-    echo ""
-    echo "   Per aprirla subito:"
-    echo "   open \"$APP_PATH\""
 fi
-
 echo ""
+echo "   ── Prima apertura ─────────────────────────────"
+echo "   Assicurati che Ollama sia in esecuzione."
 echo "   L'app appare solo nella menu bar (niente Dock)."
-echo "   Assicurati che Ollama sia in esecuzione prima di avviarla."
 echo ""
