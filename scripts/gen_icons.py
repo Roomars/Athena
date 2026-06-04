@@ -158,10 +158,22 @@ def stdlib_png(dst: Path, size: int, rgb: tuple) -> bool:
     return True
 
 
+def copy_png(src_png: Path, dst: Path) -> bool:
+    """Usa direttamente il PNG sorgente se esiste."""
+    if src_png.exists() and src_png.stat().st_size > 10_000:
+        import shutil
+        shutil.copy2(src_png, dst)
+        return True
+    return False
+
+
 def generate_app(src: Path, dst: Path):
     size = 512
     name = dst.name
+    # Usa athena-app.png se esiste (priorità massima — è l'icona vera di Roby)
+    src_png = src.parent / (src.stem + ".png")
     methods = [
+        ("PNG esistente",  lambda: copy_png(src_png, dst)),
         ("cairosvg",       lambda: try_cairosvg(src, dst, size)),
         ("rsvg-convert",   lambda: try_rsvg(src, dst, size)),
         ("Pillow",         lambda: pillow_app_icon(dst, size)),
