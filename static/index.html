@@ -6,24 +6,28 @@
   <title>Athena</title>
   <link rel="manifest" href="/static/manifest.json" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #FFFFFF;
-      --sidebar: #F5F5F5;
-      --accent: #0084FF;
-      --accent-h: #0070D8;
-      --text: #1A1A1A;
-      --muted: #8E8E93;
-      --border: #E5E5EA;
-      --user-bubble: #0084FF;
-      --ai-bubble: #F0F0F0;
-      --radius: 12px;
+      --bg:           #FFFFFF;
+      --bg-sidebar:   #F5F4EF;
+      --bg-hover:     #EEEADE;
+      --bg-active:    #E8E4D9;
+      --accent:       #0084FF;
+      --accent-h:     #006ED9;
+      --text:         #1A1A17;
+      --text-sec:     #706B5E;
+      --muted:        #9E9A8E;
+      --border:       #E2DDD5;
+      --border-input: #D1CEC7;
+      --user-bubble:  #F0EDE6;
+      --radius:       12px;
     }
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
       font-size: 15px;
       height: 100dvh;
       display: flex;
@@ -33,57 +37,81 @@
 
     /* ─── Sidebar ─── */
     .sidebar {
-      width: 200px; min-width: 200px;
-      background: var(--sidebar);
+      width: 240px; min-width: 240px;
+      background: var(--bg-sidebar);
       border-right: 1px solid var(--border);
       display: flex; flex-direction: column;
-      padding: 20px 0;
       user-select: none;
     }
     .logo {
       display: flex; align-items: center; gap: 10px;
-      padding: 0 16px 18px;
+      padding: 0 14px;
+      height: 56px;
       border-bottom: 1px solid var(--border);
     }
     .logo img { width: 28px; height: 28px; border-radius: 7px; }
-    .logo-name { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
-    nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .logo-name { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; flex: 1; }
+
+    .new-chat-btn {
+      margin: 10px 12px 4px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 14px; font-weight: 500; color: var(--text-sec);
+      cursor: pointer; border: 1px solid var(--border-input);
+      background: transparent; width: calc(100% - 24px);
+      text-align: left; font-family: inherit;
+      transition: background 0.12s, color 0.12s;
+    }
+    .new-chat-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+    nav { flex: 1; padding: 6px 8px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+    .nav-section {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--muted);
+      padding: 10px 12px 4px;
+    }
     .nav-item {
       display: flex; align-items: center; gap: 9px;
-      padding: 8px 10px; border-radius: 8px;
-      font-size: 14px; color: var(--muted);
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 14px; color: var(--text-sec);
       cursor: pointer; border: none; background: none;
       width: 100%; text-align: left; font-family: inherit;
       transition: background 0.12s, color 0.12s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .nav-item:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+    .nav-item:hover { background: var(--bg-hover); color: var(--text); }
     .nav-item.active {
-      background: #fff; color: var(--accent); font-weight: 500;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      background: var(--bg-active);
+      color: var(--text);
+      font-weight: 500;
+      border-left: 2px solid var(--accent);
+      padding-left: 10px;
     }
     .nav-item.dim { opacity: 0.38; pointer-events: none; }
     .nav-icon { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.75; }
+
     .sidebar-footer {
-      padding: 12px 16px 0; border-top: 1px solid var(--border);
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
     }
     .model-badge { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-    .dot {
+    .status-dot {
       width: 7px; height: 7px; border-radius: 50%;
       background: #34C759; flex-shrink: 0;
     }
-    .dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
+    .status-dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
 
     /* ─── Main ─── */
     .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .chat-header {
-      padding: 12px 16px;
+      padding: 0 16px;
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 7px;
-      background: var(--bg); min-height: 48px;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg); height: 48px; flex-shrink: 0;
     }
-    .chat-header h1 { font-size: 15px; font-weight: 600; flex: 1; }
-    #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #34C759; }
+    .chat-header h1 { font-size: 15px; font-weight: 600; flex: 1; letter-spacing: -0.01em; }
+    #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #34C759; flex-shrink: 0; }
     #status-text { font-size: 12px; color: var(--muted); }
     .new-btn {
       background: none; border: 1px solid var(--border);
@@ -95,62 +123,158 @@
 
     /* ─── Messages ─── */
     #messages {
-      flex: 1; overflow-y: auto; padding: 20px 16px;
-      display: flex; flex-direction: column; gap: 10px;
+      flex: 1; overflow-y: auto; padding: 24px 16px;
       scroll-behavior: smooth;
     }
     #messages::-webkit-scrollbar { width: 3px; }
     #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    .msg-row { display: flex; align-items: flex-end; gap: 7px; }
-    .msg-row.user { flex-direction: row-reverse; }
-    .av {
-      width: 24px; height: 24px; border-radius: 50%;
-      flex-shrink: 0; display: flex; align-items: center;
-      justify-content: center; font-size: 11px; font-weight: 700;
+
+    .messages-inner {
+      max-width: 680px;
+      margin: 0 auto;
+      display: flex; flex-direction: column; gap: 24px;
     }
-    .av.ai { background: var(--sidebar); border: 1px solid var(--border); overflow: hidden; }
+
+    .msg-row { display: flex; align-items: flex-start; gap: 10px; }
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .av {
+      width: 28px; height: 28px; border-radius: 50%;
+      flex-shrink: 0; display: flex; align-items: center;
+      justify-content: center; font-size: 12px; font-weight: 700;
+      margin-top: 2px;
+    }
+    .av.ai { background: var(--bg-sidebar); border: 1px solid var(--border); overflow: hidden; }
     .av.ai img { width: 100%; height: 100%; object-fit: cover; }
     .av.me { background: var(--accent); color: #fff; }
-    .bubble {
-      max-width: 75%; padding: 9px 13px;
-      border-radius: 14px; line-height: 1.55;
-      white-space: pre-wrap; word-break: break-word; font-size: 14.5px;
+
+    /* User bubble */
+    .bubble.user {
+      max-width: 75%;
+      padding: 9px 14px;
+      background: var(--user-bubble);
+      color: var(--text);
+      border-radius: 18px 18px 4px 18px;
+      line-height: 1.6;
+      word-break: break-word;
+      font-size: 15px;
     }
-    .bubble.user { background: var(--user-bubble); color: #fff; border-bottom-right-radius: 3px; }
-    .bubble.athena { background: var(--ai-bubble); color: var(--text); border-bottom-left-radius: 3px; }
-    .bubble.thinking { color: var(--muted); font-style: italic; }
+
+    /* Athena — nessuna bolla */
+    .bubble.athena {
+      flex: 1;
+      color: var(--text);
+      line-height: 1.65;
+      word-break: break-word;
+      font-size: 15px;
+    }
+
+    /* Markdown dentro le bolle Athena */
+    .bubble.athena p { margin-bottom: 0.7em; }
+    .bubble.athena p:last-child { margin-bottom: 0; }
+    .bubble.athena ul, .bubble.athena ol { padding-left: 1.4em; margin-bottom: 0.7em; }
+    .bubble.athena li { margin-bottom: 0.2em; }
+    .bubble.athena h1, .bubble.athena h2, .bubble.athena h3 {
+      font-weight: 600; margin-bottom: 0.4em; margin-top: 0.8em;
+    }
+    .bubble.athena h1:first-child, .bubble.athena h2:first-child, .bubble.athena h3:first-child { margin-top: 0; }
+    .bubble.athena code {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 13px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    .bubble.athena pre {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      margin-bottom: 0.7em;
+    }
+    .bubble.athena pre code {
+      background: none; border: none; padding: 0;
+      font-size: 13px; line-height: 1.55;
+    }
+    .bubble.athena strong { font-weight: 600; }
+    .bubble.athena blockquote {
+      border-left: 3px solid var(--border);
+      padding-left: 12px;
+      color: var(--text-sec);
+      margin-bottom: 0.7em;
+    }
+    .bubble.athena a { color: var(--accent); text-decoration: none; }
+    .bubble.athena a:hover { text-decoration: underline; }
+
+    /* Thinking dots */
+    .thinking-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+    .thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); display: block;
+      animation: thinking 1.2s ease-in-out infinite;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.16s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes thinking {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Empty state */
     .empty {
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 10px;
-      color: var(--muted); padding: 40px;
+      color: var(--muted); padding: 40px; min-height: 200px;
     }
-    .empty img { width: 52px; height: 52px; border-radius: 14px; opacity: 0.3; }
+    .empty img { width: 52px; height: 52px; border-radius: 14px; opacity: 0.25; }
     .empty p { font-size: 14px; text-align: center; max-width: 200px; line-height: 1.5; }
 
     /* ─── Input ─── */
-    .input-area { padding: 12px 14px; border-top: 1px solid var(--border); background: var(--bg); }
+    .input-area {
+      padding: 12px 16px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .input-inner { max-width: 680px; margin: 0 auto; }
     .input-wrap {
       display: flex; align-items: flex-end; gap: 8px;
-      border: 1.5px solid #D1D1D6; border-radius: var(--radius);
-      padding: 7px 7px 7px 13px; transition: border-color 0.15s;
+      border: 1.5px solid var(--border-input); border-radius: 16px;
+      padding: 8px 8px 8px 14px; transition: border-color 0.15s;
+      background: var(--bg);
     }
     .input-wrap:focus-within { border-color: var(--accent); }
     #input {
       flex: 1; background: transparent; border: none;
       padding: 3px 0; color: var(--text); font-size: 15px;
-      resize: none; outline: none; min-height: 22px; max-height: 110px;
+      resize: none; outline: none; min-height: 22px; max-height: 200px;
       overflow-y: auto; font-family: inherit; line-height: 1.5;
     }
     #input::placeholder { color: var(--muted); }
     #send {
-      background: var(--accent); border: none; border-radius: 8px;
-      width: 32px; height: 32px; display: flex; align-items: center;
+      background: var(--accent); border: none; border-radius: 50%;
+      width: 36px; height: 36px; display: flex; align-items: center;
       justify-content: center; color: #fff; cursor: pointer; flex-shrink: 0;
       transition: background 0.12s, transform 0.08s;
     }
     #send:hover { background: var(--accent-h); }
     #send:active { transform: scale(0.91); }
     #send:disabled { background: var(--border); cursor: default; transform: none; }
+
+    .input-meta {
+      display: flex; align-items: center; justify-content: center;
+      gap: 16px; margin-top: 6px;
+    }
+    .ctx-bar-wrap {
+      display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted);
+    }
+    .ctx-bar {
+      width: 80px; height: 3px; background: var(--border);
+      border-radius: 2px; overflow: hidden;
+    }
+    .ctx-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+    .input-disclaimer { font-size: 11px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -160,6 +284,10 @@
     <img src="/static/icons/athena-app.png" alt="Athena" />
     <span class="logo-name">Athena</span>
   </div>
+  <button class="new-chat-btn" onclick="clearChat()">
+    <i data-lucide="plus" style="width:14px;height:14px;stroke-width:2.5;flex-shrink:0"></i>
+    Nuova conversazione
+  </button>
   <nav>
     <button class="nav-item active">
       <i data-lucide="message-circle" class="nav-icon"></i> Chat
@@ -168,12 +296,18 @@
       <i data-lucide="brain" class="nav-icon"></i> Memoria
     </button>
     <button class="nav-item dim">
+      <i data-lucide="book-open" class="nav-icon"></i> Brain
+    </button>
+    <button class="nav-item dim">
+      <i data-lucide="zap" class="nav-icon"></i> Skill
+    </button>
+    <button class="nav-item dim">
       <i data-lucide="settings" class="nav-icon"></i> Impostazioni
     </button>
   </nav>
   <div class="sidebar-footer">
     <div class="model-badge">
-      <div class="dot" id="side-dot"></div>
+      <div class="status-dot" id="side-dot"></div>
       <span>qwen3:14b</span>
     </div>
   </div>
@@ -188,22 +322,33 @@
   </header>
 
   <div id="messages">
-    <div class="empty" id="empty-state">
-      <img src="/static/icons/athena-app.png" alt="" />
-      <p>Ciao, sono Athena.<br>Come posso aiutarti?</p>
+    <div class="messages-inner">
+      <div class="empty" id="empty-state">
+        <img src="/static/icons/athena-app.png" alt="" />
+        <p>Come posso aiutarti?</p>
+      </div>
     </div>
   </div>
 
   <div class="input-area">
-    <div class="input-wrap">
-      <textarea id="input" placeholder="Scrivi a Athena…" rows="1"></textarea>
-      <button id="send" onclick="sendMessage()" title="Invia (↵)">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <path d="M2 8.5L8 2.5M8 2.5L14 8.5M8 2.5V13.5"
-                stroke="white" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+    <div class="input-inner">
+      <div class="input-wrap">
+        <textarea id="input" placeholder="Scrivi a Athena…" rows="1"></textarea>
+        <button id="send" onclick="sendMessage()" title="Invia (↵)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 8.5L8 2.5M8 2.5L14 8.5M8 2.5V13.5"
+                  stroke="white" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-meta">
+        <div class="ctx-bar-wrap">
+          <div class="ctx-bar"><div class="ctx-bar-fill" id="ctx-fill" style="width:0%"></div></div>
+          <span id="ctx-label">0%</span>
+        </div>
+        <span class="input-disclaimer">Athena può fare errori</span>
+      </div>
     </div>
   </div>
 </main>
@@ -215,6 +360,16 @@
   const statusTxt = document.getElementById('status-text');
   const statusDot = document.getElementById('status-dot');
   const sideDot   = document.getElementById('side-dot');
+  const ctxFill   = document.getElementById('ctx-fill');
+  const ctxLabel  = document.getElementById('ctx-label');
+
+  const MAX_CHARS = 20 * 800; // ~20 messaggi × ~800 chars
+
+  marked.setOptions({ breaks: true, gfm: true });
+
+  function getInner() {
+    return msgsEl.querySelector('.messages-inner');
+  }
 
   function setStatus(s) {
     const map = {
@@ -225,7 +380,15 @@
     const v = map[s] || map.ready;
     statusTxt.textContent = v.txt;
     statusDot.style.background = v.color;
-    sideDot.className = 'dot' + (v.pulse ? ' pulse' : '');
+    sideDot.className = 'status-dot' + (v.pulse ? ' pulse' : '');
+  }
+
+  function updateCtx(text) {
+    const total = msgsEl.querySelectorAll('.bubble').length * 200 + text.length;
+    const pct = Math.min(Math.round((total / MAX_CHARS) * 100), 100);
+    ctxFill.style.width = pct + '%';
+    ctxLabel.textContent = pct + '%';
+    ctxFill.style.background = pct > 80 ? '#FF3B30' : pct > 60 ? '#FF9500' : 'var(--accent)';
   }
 
   inputEl.addEventListener('keydown', e => {
@@ -233,14 +396,18 @@
   });
   inputEl.addEventListener('input', () => {
     inputEl.style.height = 'auto';
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 110) + 'px';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
+    updateCtx(inputEl.value);
   });
 
   function addRow(role, text) {
-    const empty = document.getElementById('empty-state');
+    const inner = getInner();
+    const empty = inner.querySelector('#empty-state');
     if (empty) empty.remove();
+
     const row = document.createElement('div');
     row.className = 'msg-row ' + role;
+
     const av = document.createElement('div');
     if (role === 'user') {
       av.className = 'av me'; av.textContent = 'R';
@@ -250,12 +417,22 @@
       img.src = '/static/icons/athena-app.png'; img.alt = 'Athena';
       av.appendChild(img);
     }
+
     const b = document.createElement('div');
-    b.className = 'bubble ' + role + (text === '…' ? ' thinking' : '');
-    b.textContent = text;
+    b.className = 'bubble ' + (role === 'user' ? 'user' : 'athena');
+
+    if (text === '…') {
+      const dots = document.createElement('div');
+      dots.className = 'thinking-dots';
+      dots.innerHTML = '<span></span><span></span><span></span>';
+      b.appendChild(dots);
+    } else {
+      b.textContent = text;
+    }
+
     row.appendChild(av);
     row.appendChild(b);
-    msgsEl.appendChild(row);
+    inner.appendChild(row);
     msgsEl.scrollTop = msgsEl.scrollHeight;
     return b;
   }
@@ -277,7 +454,7 @@
       const reader = res.body.getReader();
       const dec    = new TextDecoder();
       let full = '';
-      reply.classList.remove('thinking');
+      reply.innerHTML = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -285,10 +462,12 @@
         reply.textContent = full;
         msgsEl.scrollTop = msgsEl.scrollHeight;
       }
+      reply.innerHTML = marked.parse(full);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      updateCtx('');
       setStatus('ready');
     } catch (err) {
       reply.textContent = 'Errore: ' + err.message;
-      reply.classList.remove('thinking');
       setStatus('error');
     } finally {
       sendBtn.disabled = false; inputEl.focus();
@@ -297,11 +476,14 @@
 
   async function clearChat() {
     await fetch('/chat', { method: 'DELETE' });
-    msgsEl.innerHTML =
+    const inner = getInner();
+    inner.innerHTML =
       '<div class="empty" id="empty-state">' +
       '<img src="/static/icons/athena-app.png" alt=""/>' +
-      '<p>Ciao, sono Athena.<br>Come posso aiutarti?</p>' +
+      '<p>Come posso aiutarti?</p>' +
       '</div>';
+    ctxFill.style.width = '0%';
+    ctxLabel.textContent = '0%';
     setStatus('ready');
   }
 
