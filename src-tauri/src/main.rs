@@ -21,11 +21,14 @@ fn find_project_dir() -> Option<PathBuf> {
             }
         }
     }
-    // Development → ~/athena
+    // Development → ~/Documents/athena (posizione corrente)
     if let Ok(home) = std::env::var("HOME") {
-        let dev = PathBuf::from(home).join("athena");
-        if dev.join("core/app.py").exists() {
-            return Some(dev);
+        let home = PathBuf::from(home);
+        for candidate in &["Documents/athena", "athena"] {
+            let dev = home.join(candidate);
+            if dev.join("core/app.py").exists() {
+                return Some(dev);
+            }
         }
     }
     None
@@ -81,17 +84,22 @@ fn main() {
             let (w, h) = img.dimensions();
             let tray_icon = tauri::image::Image::new_owned(img.into_raw(), w, h);
 
-            let title_item = MenuItemBuilder::with_id("title", "Athena OS").enabled(false).build(app)?;
-            let sep1       = PredefinedMenuItem::separator(app)?;
-            let open_item  = MenuItemBuilder::with_id("open", "Apri Athena").build(app)?;
-            let chat_item  = MenuItemBuilder::with_id("new_chat", "Nuova conversazione").build(app)?;
-            let sep2       = PredefinedMenuItem::separator(app)?;
-            let quit_item  = MenuItemBuilder::with_id("quit", "Esci").build(app)?;
+            let title_item  = MenuItemBuilder::with_id("title", "Athena OS").enabled(false).build(app)?;
+            let sep1        = PredefinedMenuItem::separator(app)?;
+            let open_item   = MenuItemBuilder::with_id("open", "Apri Athena").build(app)?;
+            let chat_item   = MenuItemBuilder::with_id("new_chat", "Nuova conversazione").build(app)?;
+            let sep2        = PredefinedMenuItem::separator(app)?;
+            let status_item = MenuItemBuilder::with_id("status", "● Pronta").enabled(false).build(app)?;
+            let model_item  = MenuItemBuilder::with_id("model", "qwen3:14b").enabled(false).build(app)?;
+            let sep3        = PredefinedMenuItem::separator(app)?;
+            let quit_item   = MenuItemBuilder::with_id("quit", "Esci").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&title_item).item(&sep1)
                 .item(&open_item).item(&chat_item)
-                .item(&sep2).item(&quit_item)
+                .item(&sep2)
+                .item(&status_item).item(&model_item)
+                .item(&sep3).item(&quit_item)
                 .build()?;
 
             let _tray = TrayIconBuilder::new()
