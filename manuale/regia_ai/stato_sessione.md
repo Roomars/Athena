@@ -1,6 +1,6 @@
 # Stato Sessione — Athena
 
-**Ultimo aggiornamento:** 05-06-2026 - 00:00
+**Ultimo aggiornamento:** 04-06-2026 - 22:59
 
 ---
 
@@ -49,5 +49,6 @@ Nessuno.
 | 04-06-2026 | Brain RAG: ChromaDB + watcher vault Obsidian (37 chunk) |
 | 04-06-2026 | UI Claude-style: ridisegno completo index.html |
 | 04-06-2026 | Tauri: menu nativo, DMG, Dock, fix icone, fix Python 3.9 |
-| 05-06-2026 | Fix blockers: backend crash + app reinstallazione pulita |
-| 05-06-2026 | Rimosso titleBarStyle Overlay — drag e resize ripristinati |
+| 04-06-2026 | Fix blockers: backend crash + app reinstallazione pulita |
+| 04-06-2026 | Rimosso titleBarStyle Overlay — drag e resize ripristinati (ERR-1) |
+| 04-06-2026 | Chiarito workflow sessione: /Apri pull, /Salva e /Chiudi push |
