@@ -1,3 +1,4 @@
+import asyncio
 import atexit
 import logging
 
@@ -19,17 +20,14 @@ app = FastAPI(title="Ari Brain", version="0.2.0")
 @app.on_event("startup")
 async def startup():
     log.info("Ari daemon avviato — porta 8765")
-    # Carica il modello in background — non blocca il server
+
+    # Salva il loop del thread principale — usato dal callback nel thread MLX
+    main_loop = asyncio.get_event_loop()
+
     def on_model_ready(model_id: str):
-        import asyncio
         async def _notify():
             await manager.send({"type": "model_ready", "model": model_id})
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.run_coroutine_threadsafe(_notify(), loop)
-        except Exception:
-            pass
+        asyncio.run_coroutine_threadsafe(_notify(), main_loop)
 
     engine.on_ready.append(on_model_ready)
     engine.load_async(MODEL_PRIMARY)

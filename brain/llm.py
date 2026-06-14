@@ -42,6 +42,7 @@ class LLMEngine:
                         os.environ.pop("HF_HUB_OFFLINE", None)
                         self._model, self._tokenizer = load(model_id)
                     self._model_id = model_id
+                    self._loading = False  # is_ready = True PRIMA dei callback
                     log.info(f"modello pronto: {model_id}")
                     for cb in self.on_ready:
                         cb(model_id)

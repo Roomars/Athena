@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from fastapi import WebSocket, WebSocketDisconnect
@@ -19,11 +20,12 @@ class ConnectionManager:
         await ws.accept()
         self.connection = ws
         log.info("Swift connesso via WebSocket")
-        # Comunica stato modello
         if engine.is_ready:
             await self.send({"type": "model_ready", "model": engine.model_id})
         else:
             await self.send({"type": "model_loading"})
+            # Task che notifica Swift non appena il modello è pronto
+            asyncio.create_task(self._wait_and_notify_ready())
 
     def disconnect(self):
         self.connection = None
@@ -35,6 +37,13 @@ class ConnectionManager:
                 await self.connection.send_text(json.dumps(payload))
             except Exception:
                 pass
+
+    async def _wait_and_notify_ready(self):
+        """Polling ogni 0.5s finché il modello è pronto, poi notifica Swift."""
+        while not engine.is_ready:
+            await asyncio.sleep(0.5)
+        await self.send({"type": "model_ready", "model": engine.model_id})
+        log.info("notificato Swift: model_ready")
 
     @property
     def privacy_mode(self) -> bool:
