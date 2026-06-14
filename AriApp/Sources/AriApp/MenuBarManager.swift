@@ -27,8 +27,15 @@ final class MenuBarManager: NSObject {
 
     @objc func togglePopover() {
         guard let button = statusItem?.button, let pop = popover else { return }
-        if pop.isShown { pop.performClose(nil) }
-        else { pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
+        if pop.isShown {
+            pop.performClose(nil)
+        } else {
+            pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // Rende il popover key window — necessario per i TextField in SwiftUI
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pop.contentViewController?.view.window?.makeKey()
+            }
+        }
     }
 
     func toggleOrbVisibility() {

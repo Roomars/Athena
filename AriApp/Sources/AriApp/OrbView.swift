@@ -80,5 +80,9 @@ struct OrbView: View {
         guard !text.isEmpty else { return }
         ws.send(content: text)
         inputText = ""
+        // Ripristina focus dopo l'invio
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            inputFocused = true
+        }
     }
 }
