@@ -5,12 +5,18 @@ enum OrbState: String {
     case idle, thinking, listening, speaking
 }
 
+enum ModelState {
+    case loading, ready(String)
+}
+
 final class WebSocketManager: ObservableObject {
     static let shared = WebSocketManager()
 
     @Published var orbState: OrbState = .idle
+    @Published var streamingText: String = ""
     @Published var lastResponse: String = ""
     @Published var isConnected = false
+    @Published var modelState: ModelState = .loading
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -32,14 +38,21 @@ final class WebSocketManager: ObservableObject {
 
     func send(content: String) {
         let msg: [String: Any] = ["type": "user_input", "content": content, "mode": "text"]
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
-              let str = String(data: data, encoding: .utf8) else { return }
-        task?.send(.string(str)) { _ in }
+        sendJSON(msg)
     }
 
     func sendPrivacyMode(enabled: Bool) {
-        let msg: [String: Any] = ["type": "privacy_mode", "enabled": enabled]
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+        sendJSON(["type": "privacy_mode", "enabled": enabled])
+    }
+
+    func clearMemory() {
+        sendJSON(["type": "clear_memory"])
+    }
+
+    // MARK: - Private
+
+    private func sendJSON(_ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let str = String(data: data, encoding: .utf8) else { return }
         task?.send(.string(str)) { _ in }
     }
@@ -49,12 +62,13 @@ final class WebSocketManager: ObservableObject {
             guard let self else { return }
             switch result {
             case .success(let message):
-                if case .string(let text) = message {
-                    self.handle(text)
-                }
+                if case .string(let text) = message { self.handle(text) }
                 self.receive()
             case .failure:
-                DispatchQueue.main.async { self.isConnected = false }
+                DispatchQueue.main.async {
+                    self.isConnected = false
+                    self.orbState = .idle
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.connect() }
             }
         }
@@ -69,10 +83,27 @@ final class WebSocketManager: ObservableObject {
             switch type {
             case "orb_state":
                 self.orbState = OrbState(rawValue: msg["state"] as? String ?? "idle") ?? .idle
+
             case "response_chunk":
-                self.lastResponse = msg["content"] as? String ?? ""
+                let token = msg["content"] as? String ?? ""
+                self.streamingText += token
+
             case "response_done":
+                self.lastResponse = self.streamingText
+                self.streamingText = ""
                 self.orbState = .idle
+
+            case "model_loading":
+                self.modelState = .loading
+
+            case "model_ready":
+                let modelId = msg["model"] as? String ?? "mlx"
+                self.modelState = .ready(modelId)
+
+            case "memory_cleared":
+                self.lastResponse = ""
+                self.streamingText = ""
+
             default:
                 break
             }
@@ -81,8 +112,7 @@ final class WebSocketManager: ObservableObject {
 
     private func startPing() {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            let ping = #"{"type":"ping"}"#
-            self?.task?.send(.string(ping)) { _ in }
+            self?.task?.send(.string(#"{"type":"ping"}"#)) { _ in }
         }
     }
 }

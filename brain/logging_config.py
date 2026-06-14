@@ -25,3 +25,7 @@ def setup_logging():
     root.setLevel(logging.INFO)
     root.addHandler(handler_file)
     root.addHandler(handler_console)
+
+    # Silenzia logger verbosi di librerie terze
+    for noisy in ("httpx", "httpcore", "huggingface_hub", "filelock"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

@@ -6,18 +6,33 @@ from fastapi.responses import JSONResponse
 
 from .logging_config import setup_logging
 from .settings import load as load_settings
-from .ws_handler import handle_ws
+from .llm import engine, MODEL_PRIMARY
+from .ws_handler import handle_ws, manager
 
 setup_logging()
 load_settings()
 
 log = logging.getLogger("main")
-app = FastAPI(title="Ari Brain", version="0.1.0")
+app = FastAPI(title="Ari Brain", version="0.2.0")
 
 
 @app.on_event("startup")
 async def startup():
     log.info("Ari daemon avviato — porta 8765")
+    # Carica il modello in background — non blocca il server
+    def on_model_ready(model_id: str):
+        import asyncio
+        async def _notify():
+            await manager.send({"type": "model_ready", "model": model_id})
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(_notify(), loop)
+        except Exception:
+            pass
+
+    engine.on_ready.append(on_model_ready)
+    engine.load_async(MODEL_PRIMARY)
 
 
 @app.on_event("shutdown")
@@ -32,7 +47,13 @@ def _cleanup():
 
 @app.get("/health")
 async def health():
-    return JSONResponse({"status": "ok", "version": "0.1.0", "fase": 1})
+    return JSONResponse({
+        "status": "ok",
+        "version": "0.2.0",
+        "fase": 2,
+        "model": engine.model_id,
+        "model_ready": engine.is_ready,
+    })
 
 
 @app.websocket("/ws")
