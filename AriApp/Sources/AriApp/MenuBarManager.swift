@@ -5,6 +5,7 @@ final class MenuBarManager: NSObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var isPrivacyMode = false
+    private var eventMonitor: Any?
 
     func setup() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -19,10 +20,14 @@ final class MenuBarManager: NSObject {
 
         popover = NSPopover()
         popover?.contentViewController = hosting
-        popover?.behavior = .transient
+        popover?.behavior = .applicationDefined  // rimane aperto finché non chiudiamo noi
         popover?.animates = true
 
-        buildMenu()
+        // Chiude il popover con click fuori da esso
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, self.popover?.isShown == true else { return }
+            self.popover?.performClose(nil)
+        }
     }
 
     @objc func togglePopover() {
@@ -31,7 +36,6 @@ final class MenuBarManager: NSObject {
             pop.performClose(nil)
         } else {
             pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Rende il popover key window — necessario per i TextField in SwiftUI
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pop.contentViewController?.view.window?.makeKey()
             }
@@ -42,36 +46,19 @@ final class MenuBarManager: NSObject {
         togglePopover()
     }
 
-    private func buildMenu() {
-        // Right-click menu
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Mostra Ari", action: #selector(togglePopover), keyEquivalent: ""))
-        menu.addItem(.separator())
-
-        let privacyItem = NSMenuItem(title: "Privacy Mode", action: #selector(togglePrivacy), keyEquivalent: "")
-        privacyItem.target = self
-        menu.addItem(privacyItem)
-        menu.addItem(.separator())
-
-        let quit = NSMenuItem(title: "Esci", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
-
-        statusItem?.menu = menu
-        // Rimuovi menu per rendere il click sinistro funzionale
-        statusItem?.menu = nil
-    }
-
     @objc private func togglePrivacy() {
         isPrivacyMode.toggle()
         updateStatusIcon()
         WebSocketManager.shared.sendPrivacyMode(enabled: isPrivacyMode)
-        if isPrivacyMode, popover?.isShown == true {
-            popover?.performClose(nil)
-        }
+        if isPrivacyMode { popover?.performClose(nil) }
     }
 
     private func updateStatusIcon() {
         let name = isPrivacyMode ? "pause.circle" : "sparkle"
         statusItem?.button?.image = NSImage(systemSymbolName: name, accessibilityDescription: "Ari")
+    }
+
+    deinit {
+        if let m = eventMonitor { NSEvent.removeMonitor(m) }
     }
 }
