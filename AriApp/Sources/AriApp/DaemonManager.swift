@@ -73,19 +73,21 @@ final class DaemonManager {
     }
 
     private func waitForHealth(attempt: Int = 0) {
-        guard attempt < 10 else {
-            print("[DaemonManager] /health non risponde dopo 10 tentativi")
+        guard attempt < 30 else {
+            print("[DaemonManager] /health non risponde dopo 30 tentativi — controlla i log del daemon")
             return
         }
-        let url = URL(string: "http://127.0.0.1:8765/health")!
-        URLSession.shared.dataTask(with: url) { [weak self] _, resp, _ in
-            if (resp as? HTTPURLResponse)?.statusCode == 200 {
-                DispatchQueue.main.async { WebSocketManager.shared.connect() }
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        // Prima attesa più lunga: il daemon impiega qualche secondo per avviarsi
+        let delay: Double = attempt == 0 ? 3.0 : 2.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            let url = URL(string: "http://127.0.0.1:8765/health")!
+            URLSession.shared.dataTask(with: url) { _, resp, _ in
+                if (resp as? HTTPURLResponse)?.statusCode == 200 {
+                    DispatchQueue.main.async { WebSocketManager.shared.connect() }
+                } else {
                     self?.waitForHealth(attempt: attempt + 1)
                 }
-            }
-        }.resume()
+            }.resume()
+        }
     }
 }

@@ -31,11 +31,15 @@ class LLMEngine:
                 self._loading = True
                 log.info(f"caricamento: {model_id}")
                 try:
+                    import os
                     from mlx_lm import load
-                    # local_files_only evita network check ad ogni avvio
+                    # Usa cache locale — evita network check HuggingFace ad ogni avvio
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
                     try:
-                        self._model, self._tokenizer = load(model_id, tokenizer_config={"local_files_only": True})
+                        self._model, self._tokenizer = load(model_id)
                     except Exception:
+                        # Modello non in cache — scarica dalla rete
+                        os.environ.pop("HF_HUB_OFFLINE", None)
                         self._model, self._tokenizer = load(model_id)
                     self._model_id = model_id
                     log.info(f"modello pronto: {model_id}")
