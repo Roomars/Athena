@@ -7,12 +7,16 @@ struct OrbView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var rippleScale: CGFloat = 1.0
     @State private var rippleOpacity: Double = 0.6
+    // Testo visualizzato — aggiornato via onChange per evitare problemi di tracking SwiftUI
+    @State private var displayText: String = ""
 
     var body: some View {
         VStack(spacing: 12) {
             orbSection
             statusLabel
-            responseSection
+            if !displayText.isEmpty {
+                responseSection
+            }
             inputSection
         }
         .padding(16)
@@ -21,8 +25,13 @@ struct OrbView: View {
             inputFocused = true
             startIdleAnimation()
         }
-        .onChange(of: ws.orbState) { _ in
-            startIdleAnimation()
+        .onChange(of: ws.orbState) { _ in startIdleAnimation() }
+        // Aggiorna displayText esplicitamente — non dipende dal tracking @ViewBuilder
+        .onChange(of: ws.streamingText) { text in
+            if !text.isEmpty { displayText = text }
+        }
+        .onChange(of: ws.lastResponse) { text in
+            displayText = text
         }
     }
 
@@ -30,7 +39,6 @@ struct OrbView: View {
 
     private var orbSection: some View {
         ZStack {
-            // Anelli ripple — visibili solo in speaking
             if ws.orbState == .speaking {
                 ForEach(0..<3, id: \.self) { i in
                     Circle()
@@ -39,7 +47,6 @@ struct OrbView: View {
                         .scaleEffect(rippleScale)
                 }
             }
-            // Orb principale
             Circle()
                 .fill(orbGradient)
                 .frame(width: 48, height: 48)
@@ -50,7 +57,7 @@ struct OrbView: View {
         .animation(.easeInOut(duration: 0.35), value: ws.orbState)
     }
 
-    // MARK: - Labels
+    // MARK: - Status
 
     private var statusLabel: some View {
         Group {
@@ -68,20 +75,17 @@ struct OrbView: View {
 
     // MARK: - Response
 
-    @ViewBuilder
     private var responseSection: some View {
-        let display = ws.streamingText.isEmpty ? ws.lastResponse : ws.streamingText
-        if !display.isEmpty {
-            ScrollView {
-                Text(display)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 160)
-            .padding(.horizontal, 4)
+        ScrollView {
+            Text(displayText)
+                .font(.system(size: 13))
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
+        .frame(maxHeight: 180)
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Input
@@ -160,8 +164,6 @@ struct OrbView: View {
             }
         }
     }
-
-    // MARK: - Actions
 
     private func send() {
         let text = inputText.trimmingCharacters(in: .whitespaces)
