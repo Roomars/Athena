@@ -29,6 +29,7 @@ final class DaemonManager {
     }
 
     func start() {
+        freePort()
         let ariDir = daemonPath
         let venv = "\(ariDir)/.venv/bin/uvicorn"
         let uvicorn = FileManager.default.fileExists(atPath: venv) ? venv : "uvicorn"
@@ -60,6 +61,15 @@ final class DaemonManager {
     func stop() {
         process?.terminate()
         process = nil
+        freePort()
+    }
+
+    private func freePort() {
+        let killer = Process()
+        killer.executableURL = URL(fileURLWithPath: "/bin/sh")
+        killer.arguments = ["-c", "lsof -ti:8765 | xargs kill -9 2>/dev/null; true"]
+        try? killer.run()
+        killer.waitUntilExit()
     }
 
     private func waitForHealth(attempt: Int = 0) {
