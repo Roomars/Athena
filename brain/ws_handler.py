@@ -10,6 +10,7 @@ from .complexity_router import classify
 from .tts import tts
 from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
+from . import vision
 
 log = logging.getLogger("ws")
 
@@ -71,6 +72,12 @@ async def handle_ws(ws: WebSocket):
                     log.info(f"input testo: {content!r}")
                     await _respond(content)
 
+            elif msg_type == "vision_request":
+                image_b64 = msg.get("image", "")
+                prompt    = msg.get("prompt", "Descrivi cosa vedi in questo screenshot.")
+                if image_b64:
+                    await _respond_vision(image_b64, prompt)
+
             elif msg_type == "voice_start":
                 tts.stop()
                 await manager.send({"type": "orb_state", "state": "listening"})
@@ -128,6 +135,11 @@ async def _respond(user_input: str):
     match = skill_router.route(user_input)
     if match:
         skill, params = match
+        # Screen vision: chiede a Swift di catturare lo schermo — risposta arriverà come vision_request
+        if skill.name == "screen_vision":
+            await manager.send({"type": "capture_screen", "prompt": user_input})
+            await manager.send({"type": "orb_state", "state": "listening"})
+            return
         try:
             skill_context = await skill.run(user_input, params)
             log.info(f"skill '{skill.name}' completata: {skill_context[:80]}")
@@ -170,3 +182,20 @@ async def _respond(user_input: str):
     # Memoria: estrae fatti in background senza bloccare
     if full_response.strip():
         asyncio.create_task(extract_and_save(user_input, full_response.strip()))
+
+
+async def _respond_vision(image_b64: str, prompt: str):
+    """Analizza uno screenshot con Gemma 4 12B e risponde in chat."""
+    await manager.send({"type": "orb_state", "state": "thinking"})
+
+    result = await vision.analyze(image_b64, prompt)
+
+    working_memory.add("user",      f"[screenshot] {prompt}")
+    working_memory.add("assistant", result)
+
+    await manager.send({"type": "response_chunk", "content": result, "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+
+    if result.strip():
+        tts.speak(result.strip())
+        asyncio.create_task(extract_and_save(f"[screenshot] {prompt}", result))

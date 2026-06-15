@@ -216,6 +216,19 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         sendBtn.action = #selector(sendMessage)
         container.addSubview(sendBtn)
 
+        // Bottone camera (seconda posizione da sinistra) — cattura schermo
+        let camX   = pad + btnSz + 4
+        let camBtn = NSButton(frame: NSRect(x: camX, y: (h-btnSz)/2, width: btnSz, height: btnSz))
+        camBtn.bezelStyle       = .circular
+        camBtn.isBordered       = false
+        camBtn.image            = NSImage(systemSymbolName: "camera.viewfinder",
+                                          accessibilityDescription: "Schermo")
+        camBtn.contentTintColor = NSColor.white.withAlphaComponent(0.4)
+        camBtn.autoresizingMask = []
+        camBtn.target           = self
+        camBtn.action           = #selector(captureScreen)
+        container.addSubview(camBtn)
+
         // Bottone microfono (sinistra) — hold-to-talk
         let micBtn = HoldMicButton(frame: NSRect(x: pad, y: (h-btnSz)/2, width: btnSz, height: btnSz))
         micBtn.bezelStyle       = .circular
@@ -228,8 +241,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         container.addSubview(micBtn)
         micButton = micBtn
 
-        // Campo testo (tra i due bottoni)
-        let fieldX = pad + btnSz + 6
+        // Campo testo (dopo mic + camera)
+        let fieldX = pad + btnSz + 4 + btnSz + 6
         let fieldW = sendX - fieldX - 4
         let field = NSTextField(frame: NSRect(x: fieldX, y: (h-22)/2, width: fieldW, height: 22))
         field.placeholderString = "Scrivi ad Ari..."
@@ -272,7 +285,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         p.isFloatingPanel             = true
         p.level                       = .floating
         p.hidesOnDeactivate           = false
-        p.collectionBehavior          = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.collectionBehavior          = [.fullScreenAuxiliary]
         p.isMovableByWindowBackground = true
 
         if chrome {
@@ -343,6 +356,11 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         }
         vm.onError = { [weak self] _ in
             self?.resetMicButton()
+        }
+
+        // Vision — cattura schermo su richiesta di Python
+        WebSocketManager.shared.onCaptureScreen = { prompt in
+            VisionCapture.captureAndSend(prompt: prompt)
         }
 
         // Notifiche proattive — mostra banner macOS e aggiorna il pannello risposta
@@ -440,6 +458,15 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
 
     @objc func toggleMemory() { MemoryPanel.shared.toggle() }
     @objc func toggleStats()  { StatsPanel.shared.toggle() }
+
+    @objc private func captureScreen() {
+        let prompt = inputField?.stringValue.trimmingCharacters(in: .whitespaces) ?? ""
+        let effectivePrompt = prompt.isEmpty
+            ? "Descrivi cosa vedi in questo screenshot macOS."
+            : prompt
+        inputField?.stringValue = ""
+        VisionCapture.captureAndSend(prompt: effectivePrompt)
+    }
 
     /// Chiamato dall'hotkey globale — toggle registrazione voce
     func activateVoiceHotkey() {

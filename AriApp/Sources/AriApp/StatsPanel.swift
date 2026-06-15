@@ -63,7 +63,7 @@ final class StatsPanel {
         p.isFloatingPanel             = true
         p.level                       = .floating
         p.hidesOnDeactivate           = false
-        p.collectionBehavior          = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.collectionBehavior          = [.fullScreenAuxiliary]
         p.isMovableByWindowBackground = true
         p.standardWindowButton(.miniaturizeButton)?.isHidden = true
         p.standardWindowButton(.zoomButton)?.isHidden        = true

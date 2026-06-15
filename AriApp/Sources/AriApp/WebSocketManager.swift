@@ -25,6 +25,7 @@ final class WebSocketManager: ObservableObject {
     var onProactiveNotification: ((String, String) -> Void)?  // (title, body)
     var onMemoryDump:            (([String: String], [[String: Any]]) -> Void)?
     var onStatsUpdate:           (([String: Any]) -> Void)?
+    var onCaptureScreen:         ((String) -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -64,6 +65,10 @@ final class WebSocketManager: ObservableObject {
 
     func requestMemoryDump() {
         sendJSON(["type": "memory_dump"])
+    }
+
+    func sendVisionRequest(image: String, prompt: String) {
+        sendJSON(["type": "vision_request", "image": image, "prompt": prompt])
     }
 
     // MARK: - Private
@@ -139,6 +144,10 @@ final class WebSocketManager: ObservableObject {
 
             case "stats_update":
                 self.onStatsUpdate?(msg)
+
+            case "capture_screen":
+                let prompt = msg["prompt"] as? String ?? "Descrivi cosa vedi in questo screenshot."
+                self.onCaptureScreen?(prompt)
 
             default:
                 break

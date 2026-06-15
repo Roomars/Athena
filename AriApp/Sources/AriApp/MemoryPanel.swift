@@ -44,7 +44,7 @@ final class MemoryPanel {
         p.isFloatingPanel            = true
         p.level                      = .floating
         p.hidesOnDeactivate          = false
-        p.collectionBehavior         = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.collectionBehavior         = [.fullScreenAuxiliary]
         p.isMovableByWindowBackground = true
         p.minSize = NSSize(width: 300, height: 200)
 
