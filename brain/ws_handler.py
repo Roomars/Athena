@@ -212,6 +212,10 @@ async def _respond(user_input: str):
     if full_response.strip():
         asyncio.create_task(extract_and_save(user_input, full_response.strip()))
 
+    # File write: se la risposta contiene SAVE_TO:/path, salva il file
+    if "SAVE_TO:" in full_response:
+        _handle_save_to(full_response)
+
 
 async def _respond_vision(image_b64: str, prompt: str):
     """Analizza uno screenshot con Gemma 4 12B e risponde in chat."""
@@ -352,6 +356,25 @@ async def _on_build_failed(error: str):
                         "stream": False})
     await manager.send({"type": "response_done", "state": "idle"})
     tts.speak("Build fallita. Ho ripristinato i file originali.")
+
+
+def _handle_save_to(response: str) -> None:
+    """Salva file se la risposta contiene SAVE_TO:/percorso."""
+    import re, os
+    from pathlib import Path
+    m = re.search(r'SAVE_TO:([^\s\n]+)', response)
+    if not m:
+        return
+    raw_path = m.group(1)
+    path = Path(os.path.expanduser(raw_path)).resolve()
+    # Estrai il contenuto (tutto tranne l'ultima riga SAVE_TO:...)
+    content = re.sub(r'\nSAVE_TO:[^\n]+', '', response).strip()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        log.info(f"File salvato: {path}")
+    except Exception as e:
+        log.error(f"Errore salvataggio {path}: {e}")
 
 
 async def _send_error(msg: str):
