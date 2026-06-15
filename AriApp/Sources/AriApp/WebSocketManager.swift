@@ -24,6 +24,7 @@ final class WebSocketManager: ObservableObject {
     var onSTTResult:             ((String) -> Void)?
     var onProactiveNotification: ((String, String) -> Void)?  // (title, body)
     var onMemoryDump:            (([String: String], [[String: Any]]) -> Void)?
+    var onStatsUpdate:           (([String: Any]) -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -135,6 +136,9 @@ final class WebSocketManager: ObservableObject {
                 let facts    = msg["facts"]    as? [String: String]  ?? [:]
                 let episodes = msg["episodes"] as? [[String: Any]]   ?? []
                 self.onMemoryDump?(facts, episodes)
+
+            case "stats_update":
+                self.onStatsUpdate?(msg)
 
             default:
                 break

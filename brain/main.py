@@ -11,6 +11,7 @@ from .llm import engine, MODEL_PRIMARY
 from .ws_handler import handle_ws, manager
 from .tts import tts
 from .proactive.monitor import monitor_loop
+from .stats_monitor import stats_loop
 
 setup_logging()
 load_settings()
@@ -36,6 +37,9 @@ async def startup():
 
     # Monitor proattivo — gira in background ogni 60s
     asyncio.create_task(monitor_loop(manager, tts))
+
+    # Stats sistema — invia metriche ogni 2s via WebSocket
+    asyncio.create_task(stats_loop(manager.send))
 
 
 @app.on_event("shutdown")

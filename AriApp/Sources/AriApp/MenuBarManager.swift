@@ -50,7 +50,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         sub.addItem(menuItem("Orb",      visible: orbPanel?.isVisible,         action: #selector(toggleOrb)))
         sub.addItem(menuItem("Risposta", visible: responsePanel?.isVisible,    action: #selector(toggleResponse)))
         sub.addItem(menuItem("Input",    visible: inputPanel?.isVisible,       action: #selector(toggleInput)))
-        sub.addItem(menuItem("Memoria",  visible: MemoryPanel.shared.isVisible, action: #selector(toggleMemory)))
+        sub.addItem(menuItem("Memoria",  visible: MemoryPanel.shared.isVisible,  action: #selector(toggleMemory)))
+        sub.addItem(menuItem("Sistema",  visible: StatsPanel.shared.isVisible,  action: #selector(toggleStats)))
         visualizzaItem.submenu = sub
         menu.addItem(visualizzaItem)
 
@@ -438,6 +439,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     func toggleOrbVisibility() { toggleOrb() }
 
     @objc func toggleMemory() { MemoryPanel.shared.toggle() }
+    @objc func toggleStats()  { StatsPanel.shared.toggle() }
 
     /// Chiamato dall'hotkey globale — toggle registrazione voce
     func activateVoiceHotkey() {
