@@ -27,5 +27,9 @@ diagnostics/
 # Vault locale (dati privati)
 vault/
 
+# Database locale (generato a runtime)
+data/memory.db
+data/*.db
+
 # Settings con segreti
 # settings.json è in ~/Library, non nel repo — ok
