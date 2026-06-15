@@ -56,10 +56,10 @@ final class SnapManager {
         for panel in movedGroup {
             for group in groups where !group.contains(where: { $0 === panel }) {
                 for other in group {
-                    if let neo = snapOrigin(panel, to: other) {
+                    if let neo = snapFrame(panel, to: other) {
                         isMovingGroup = true
-                        panel.setFrameOrigin(neo)
-                        lastPositions[ObjectIdentifier(panel)] = neo
+                        panel.setFrame(neo, display: true, animate: false)
+                        lastPositions[ObjectIdentifier(panel)] = neo.origin
                         isMovingGroup = false
                         mergeGroups(containing: panel, and: other)
                         updateVisuals()
@@ -71,20 +71,33 @@ final class SnapManager {
         updateVisuals()
     }
 
-    // Returns the snapped origin for `a` relative to `b`, or nil if too far
-    private func snapOrigin(_ a: AriPanel, to b: AriPanel) -> NSPoint? {
+    // Returns the snapped frame for `a` relative to `b`:
+    // horizontal snap → a adopts b's height and bottom-aligns
+    // vertical snap   → a adopts b's width and left-aligns
+    private func snapFrame(_ a: AriPanel, to b: AriPanel) -> NSRect? {
         let af = a.frame
         let bf = b.frame
         let t  = snapThreshold
 
-        // Require at least 20px of shared edge to avoid false snaps on corners
         let vOverlap = min(af.maxY, bf.maxY) - max(af.minY, bf.minY) > 20
         let hOverlap = min(af.maxX, bf.maxX) - max(af.minX, bf.minX) > 20
 
-        if vOverlap && abs(af.maxX - bf.minX) < t { return NSPoint(x: bf.minX - af.width, y: af.minY) }
-        if vOverlap && abs(af.minX - bf.maxX) < t { return NSPoint(x: bf.maxX,             y: af.minY) }
-        if hOverlap && abs(af.maxY - bf.minY) < t { return NSPoint(x: af.minX, y: bf.minY - af.height) }
-        if hOverlap && abs(af.minY - bf.maxY) < t { return NSPoint(x: af.minX, y: bf.maxY) }
+        // A snaps to LEFT of B (a.maxX ≈ b.minX)
+        if vOverlap && abs(af.maxX - bf.minX) < t {
+            return NSRect(x: bf.minX - af.width, y: bf.minY, width: af.width, height: bf.height)
+        }
+        // A snaps to RIGHT of B (a.minX ≈ b.maxX)
+        if vOverlap && abs(af.minX - bf.maxX) < t {
+            return NSRect(x: bf.maxX, y: bf.minY, width: af.width, height: bf.height)
+        }
+        // A snaps ABOVE B (a.minY ≈ b.maxY)
+        if hOverlap && abs(af.minY - bf.maxY) < t {
+            return NSRect(x: bf.minX, y: bf.maxY, width: bf.width, height: af.height)
+        }
+        // A snaps BELOW B (a.maxY ≈ b.minY)
+        if hOverlap && abs(af.maxY - bf.minY) < t {
+            return NSRect(x: bf.minX, y: bf.minY - af.height, width: bf.width, height: af.height)
+        }
         return nil
     }
 
