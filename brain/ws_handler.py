@@ -12,9 +12,13 @@ from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
 from . import vision
 from . import self_modify
-from .self_modify_agent import generate_skill, build_init_update
+from .self_modify_agent import (
+    generate_skill, build_init_update,
+    classify_request, generate_swift_change, generate_personality_change,
+)
 
-_pending_mod: dict | None = None   # proposta in attesa di conferma
+_pending_mod:   dict | None = None   # proposta in attesa di conferma utente
+_pending_build: dict | None = None   # modifica applicata, in attesa del build Swift
 
 log = logging.getLogger("ws")
 
@@ -116,6 +120,12 @@ async def handle_ws(ws: WebSocket):
 
             elif msg_type == "reject_patch":
                 await _reject_pending()
+
+            elif msg_type == "build_success":
+                await _on_build_success()
+
+            elif msg_type == "build_failed":
+                await _on_build_failed(msg.get("error", "Errore sconosciuto."))
 
             elif msg_type == "memory_dump":
                 from .memory_store import memory_store
@@ -226,51 +236,53 @@ async def _handle_self_modify(user_input: str):
     global _pending_mod
     await manager.send({"type": "orb_state", "state": "thinking"})
     await manager.send({"type": "response_chunk",
-                        "content": "Sto generando il codice...\n", "stream": True})
+                        "content": "Analizzo la richiesta...\n", "stream": True})
 
-    skill_info = await generate_skill(user_input)
-    if not skill_info:
-        await manager.send({"type": "response_chunk",
-                            "content": "Non sono riuscita a generare il codice. Riprova con una descrizione più precisa.",
-                            "stream": False})
-        await manager.send({"type": "response_done", "state": "idle"})
-        return
+    kind = classify_request(user_input)
+    changes: list[dict] = []
+    description = ""
 
-    # Leggi file esistenti per calcolare diff
-    changes = []
+    if kind == "python_skill":
+        skill_info = await generate_skill(user_input)
+        if not skill_info:
+            await _send_error("Non sono riuscita a generare il codice. Riprova con una descrizione più precisa.")
+            return
+        changes.append({"scope": "brain", "rel_path": skill_info["filename"],
+                         "content": skill_info["content"]})
+        current_init = self_modify.read_file("skills/__init__.py")
+        module_name  = skill_info["filename"].replace("skills/", "").replace(".py", "")
+        updated_init = build_init_update(skill_info["class_name"], module_name, current_init)
+        changes.append({"scope": "brain", "rel_path": "skills/__init__.py",
+                         "content": updated_init})
+        description = f"Nuova skill Python: {skill_info['class_name']}"
 
-    # File nuova skill
-    new_skill_content = skill_info["content"]
-    changes.append({"rel_path": skill_info["filename"], "content": new_skill_content})
+    elif kind == "swift_ui":
+        swift_changes = await generate_swift_change(user_input)
+        if not swift_changes:
+            await _send_error("Non sono riuscita a generare il codice Swift.")
+            return
+        changes = swift_changes
+        description = f"Modifica UI Swift: {', '.join(c['rel_path'] for c in changes)}"
 
-    # File __init__.py aggiornato
-    current_init  = self_modify.read_file("skills/__init__.py")
-    module_name   = skill_info["filename"].replace("skills/", "").replace(".py", "")
-    updated_init  = build_init_update(skill_info["class_name"], module_name, current_init)
-    diff_init     = self_modify.compute_diff(current_init, updated_init, "skills/__init__.py")
-    changes.append({"rel_path": "skills/__init__.py", "content": updated_init})
+    elif kind == "personality":
+        pers_changes = await generate_personality_change(user_input)
+        if not pers_changes:
+            await _send_error("Non sono riuscita a modificare la personalità.")
+            return
+        changes = pers_changes
+        description = "Aggiornamento personalità/voce"
 
-    _pending_mod = {"changes": changes, "skill_name": skill_info["skill_name"]}
+    has_swift = any(c["scope"] == "swift" for c in changes)
+    _pending_mod = {"changes": changes, "description": description, "has_swift": has_swift}
 
-    # Mostra diff nel pannello risposta
-    summary = (
-        f"PROPOSTA DI MODIFICA\n"
-        f"{'─' * 56}\n\n"
-        f"Nuova skill: {skill_info['class_name']} ({skill_info['filename']})\n\n"
-        f"── {skill_info['filename']} ──\n{new_skill_content}\n\n"
-        f"── skills/__init__.py (diff) ──\n{diff_init}\n\n"
-        f"{'─' * 56}\n"
-        f"Scrivi 'applica' per confermare o 'annulla' per rifiutare."
-    )
-
+    summary = _build_summary(changes, description)
     await manager.send({"type": "response_chunk", "content": summary, "stream": False})
     await manager.send({"type": "response_done", "state": "idle"})
-    await manager.send({"type": "diff_proposal",
-                        "description": f"Nuova skill: {skill_info['class_name']}"})
+    await manager.send({"type": "diff_proposal", "description": description})
 
 
 async def _apply_pending():
-    global _pending_mod
+    global _pending_mod, _pending_build
     if not _pending_mod:
         return
     mod = _pending_mod
@@ -278,19 +290,31 @@ async def _apply_pending():
 
     await manager.send({"type": "orb_state", "state": "thinking"})
     await manager.send({"type": "response_chunk",
-                        "content": "Applicazione modifiche...", "stream": True})
+                        "content": "Scrivo i file...", "stream": True})
 
-    self_modify.apply_changes(mod["changes"])
-    commit_out = self_modify.git_commit(f"feat: skill '{mod['skill_name']}' via self-modify")
+    backups = self_modify.apply_changes(mod["changes"])
 
-    await manager.send({"type": "response_chunk",
-                        "content": f"\n\nModifiche applicate. {commit_out}\nRiavvio in corso...",
-                        "stream": False})
-    await manager.send({"type": "response_done", "state": "idle"})
-    await manager.send({"type": "modification_applied"})
-
-    tts.speak("Fatto. Mi sto riavviando per caricare la nuova skill.")
-    self_modify.restart_daemon()
+    if mod["has_swift"]:
+        # Attende build_success / build_failed da Swift
+        _pending_build = {"mod": mod, "backups": backups}
+        await manager.send({"type": "response_chunk",
+                            "content": "\nCompilazione Swift in corso...", "stream": True})
+        await manager.send({"type": "rebuild_app"})
+    else:
+        # Solo Python / constitution — commit e restart daemon
+        commit_out = self_modify.git_commit(f"self-modify: {mod['description']}")
+        needs_restart = any(c["scope"] == "brain" for c in mod["changes"])
+        msg = f"\n\nApplicato. {commit_out}"
+        if needs_restart:
+            msg += "\nRiavvio daemon..."
+        await manager.send({"type": "response_chunk", "content": msg, "stream": False})
+        await manager.send({"type": "response_done", "state": "idle"})
+        if needs_restart:
+            tts.speak("Fatto. Mi sto riavviando.")
+            await manager.send({"type": "modification_applied"})
+            self_modify.restart_daemon()
+        else:
+            tts.speak("Fatto. La modifica è attiva.")
 
 
 async def _reject_pending():
@@ -299,3 +323,51 @@ async def _reject_pending():
     await manager.send({"type": "response_chunk",
                         "content": "Modifica annullata. Nessun file modificato.", "stream": False})
     await manager.send({"type": "response_done", "state": "idle"})
+
+
+async def _on_build_success():
+    global _pending_build
+    if not _pending_build:
+        return
+    build = _pending_build
+    _pending_build = None
+    commit_out = self_modify.git_commit(f"self-modify: {build['mod']['description']}")
+    await manager.send({"type": "response_chunk",
+                        "content": f"\nBuild OK. {commit_out}\nRiavvio app...",
+                        "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+    tts.speak("Build completata. Sto riavviando.")
+
+
+async def _on_build_failed(error: str):
+    global _pending_build
+    if not _pending_build:
+        return
+    build = _pending_build
+    _pending_build = None
+    self_modify.rollback(build["backups"])
+    short_error = error[-400:] if len(error) > 400 else error
+    await manager.send({"type": "response_chunk",
+                        "content": f"\nBuild fallita — rollback eseguito.\n\n{short_error}",
+                        "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+    tts.speak("Build fallita. Ho ripristinato i file originali.")
+
+
+async def _send_error(msg: str):
+    await manager.send({"type": "response_chunk", "content": msg, "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+
+
+def _build_summary(changes: list[dict], description: str) -> str:
+    lines = [
+        "PROPOSTA DI MODIFICA",
+        "─" * 56,
+        f"\n{description}\n",
+    ]
+    for c in changes:
+        lines.append(f"── [{c['scope']}] {c['rel_path']} ──")
+        lines.append(c["content"][:1200] + ("..." if len(c["content"]) > 1200 else ""))
+        lines.append("")
+    lines += ["─" * 56, "Scrivi 'applica' per confermare o 'annulla' per rifiutare."]
+    return "\n".join(lines)

@@ -154,14 +154,37 @@ final class WebSocketManager: ObservableObject {
                 let desc = msg["description"] as? String ?? "Modifica proposta"
                 self.onDiffProposal?(desc)
 
+            case "rebuild_app":
+                // Python ha scritto i file Swift — compila e riavvia
+                self.handleRebuild()
+
             case "modification_applied":
-                // Il daemon si riavvierà — DaemonManager lo rileverà e lo rilancerà
+                // Solo Python modificato — DaemonManager lo riavvierà
                 break
 
             default:
                 break
             }
         }
+    }
+
+    private func handleRebuild() {
+        sendJSON(["type": "build_started"])
+        BuildManager.shared.build(
+            onProgress: { chunk in
+                self.sendJSON(["type": "build_log", "content": chunk])
+            },
+            completion: { success, output in
+                if success {
+                    self.sendJSON(["type": "build_success"])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        BuildManager.shared.restart()
+                    }
+                } else {
+                    self.sendJSON(["type": "build_failed", "error": output])
+                }
+            }
+        )
     }
 
     private func startPing() {

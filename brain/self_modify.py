@@ -12,8 +12,10 @@ from pathlib import Path
 
 log = logging.getLogger("self_modify")
 
-BRAIN_ROOT = Path(__file__).parent
-REPO_ROOT  = BRAIN_ROOT.parent
+BRAIN_ROOT  = Path(__file__).parent
+REPO_ROOT   = BRAIN_ROOT.parent
+SWIFT_ROOT  = REPO_ROOT / "AriApp" / "Sources" / "AriApp"
+CONST_ROOT  = REPO_ROOT / "constitution"
 
 
 def read_file(rel_path: str) -> str:
@@ -43,13 +45,73 @@ def compute_diff(original: str, modified: str, filename: str) -> str:
     return "\n".join(diff)
 
 
-def apply_changes(changes: list[dict]) -> None:
-    """Scrive i file. Ogni change: {rel_path: str, content: str}"""
+# ── Percorsi per scope ───────────────────────────────────────────────────────
+
+def _resolve(scope: str, rel_path: str) -> Path:
+    """Ritorna il Path assoluto dato scope (brain|swift|constitution) e percorso relativo."""
+    if scope == "brain":
+        return BRAIN_ROOT / rel_path
+    elif scope == "swift":
+        return SWIFT_ROOT / rel_path
+    elif scope == "constitution":
+        return CONST_ROOT / rel_path
+    else:
+        raise ValueError(f"Scope non valido: {scope}")
+
+
+def read_scoped(scope: str, rel_path: str) -> str:
+    return _resolve(scope, rel_path).read_text(encoding="utf-8")
+
+
+def file_exists_scoped(scope: str, rel_path: str) -> bool:
+    return _resolve(scope, rel_path).exists()
+
+
+def list_swift_files() -> list[str]:
+    return sorted(
+        str(p.relative_to(SWIFT_ROOT))
+        for p in SWIFT_ROOT.rglob("*.swift")
+        if "__pycache__" not in str(p)
+    )
+
+
+# ── Apply con backup per rollback ─────────────────────────────────────────────
+
+def apply_changes(changes: list[dict]) -> dict[str, str]:
+    """
+    Scrive i file. Ogni change: {scope: str, rel_path: str, content: str}
+    Ritorna backup {key → original_content} per rollback.
+    """
+    backups: dict[str, str] = {}
     for change in changes:
-        path = BRAIN_ROOT / change["rel_path"]
+        path = _resolve(change["scope"], change["rel_path"])
+        key  = f"{change['scope']}:{change['rel_path']}"
+        backups[key] = path.read_text(encoding="utf-8") if path.exists() else ""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(change["content"], encoding="utf-8")
-        log.info(f"Scritto: {path}")
+        log.info(f"Scritto [{change['scope']}]: {path}")
+    return backups
+
+
+def rollback(backups: dict[str, str]) -> None:
+    """Ripristina i file originali dai backup."""
+    for key, content in backups.items():
+        scope, rel_path = key.split(":", 1)
+        path = _resolve(scope, rel_path)
+        if content:
+            path.write_text(content, encoding="utf-8")
+            log.info(f"Rollback [{scope}]: {path}")
+        elif path.exists():
+            path.unlink()
+            log.info(f"Rollback (rimosso) [{scope}]: {path}")
+
+
+# ── Vecchia firma mantenuta per compatibilità con skill Python ────────────────
+
+def apply_brain_changes(changes: list[dict]) -> dict[str, str]:
+    """Scrive solo file brain/. changes: [{rel_path, content}]"""
+    scoped = [{"scope": "brain", **c} for c in changes]
+    return apply_changes(scoped)
 
 
 def git_commit(message: str) -> str:
