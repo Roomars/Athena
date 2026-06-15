@@ -26,6 +26,7 @@ final class WebSocketManager: ObservableObject {
     var onMemoryDump:            (([String: String], [[String: Any]]) -> Void)?
     var onStatsUpdate:           (([String: Any]) -> Void)?
     var onCaptureScreen:         ((String) -> Void)?
+    var onDiffProposal:          ((String) -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -73,7 +74,7 @@ final class WebSocketManager: ObservableObject {
 
     // MARK: - Private
 
-    private func sendJSON(_ payload: [String: Any]) {
+    func sendJSON(_ payload: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let str = String(data: data, encoding: .utf8) else { return }
         task?.send(.string(str)) { _ in }
@@ -148,6 +149,14 @@ final class WebSocketManager: ObservableObject {
             case "capture_screen":
                 let prompt = msg["prompt"] as? String ?? "Descrivi cosa vedi in questo screenshot."
                 self.onCaptureScreen?(prompt)
+
+            case "diff_proposal":
+                let desc = msg["description"] as? String ?? "Modifica proposta"
+                self.onDiffProposal?(desc)
+
+            case "modification_applied":
+                // Il daemon si riavvierà — DaemonManager lo rileverà e lo rilancerà
+                break
 
             default:
                 break

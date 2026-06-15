@@ -363,6 +363,11 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
             VisionCapture.captureAndSend(prompt: prompt)
         }
 
+        // Self-modify — mostra banner di approvazione
+        WebSocketManager.shared.onDiffProposal = { description in
+            ApprovalBanner.shared.show(description: description)
+        }
+
         // Notifiche proattive — mostra banner macOS e aggiorna il pannello risposta
         WebSocketManager.shared.onProactiveNotification = { [weak self] title, body in
             NotificationManager.shared.show(title: title, body: body)
@@ -420,8 +425,18 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     @objc private func sendMessage() {
         guard let text = inputField?.stringValue.trimmingCharacters(in: .whitespaces),
               !text.isEmpty else { return }
-        WebSocketManager.shared.send(content: text)
         inputField?.stringValue = ""
+        // Shortcut testuali per approvazione modifica
+        let lower = text.lowercased()
+        if lower == "applica" {
+            ApprovalBanner.shared.dismiss()
+            WebSocketManager.shared.sendJSON(["type": "apply_patch"])
+        } else if lower == "annulla" {
+            ApprovalBanner.shared.dismiss()
+            WebSocketManager.shared.sendJSON(["type": "reject_patch"])
+        } else {
+            WebSocketManager.shared.send(content: text)
+        }
     }
 
     func control(_ control: NSControl, textView tv: NSTextView,

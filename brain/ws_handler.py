@@ -11,6 +11,10 @@ from .tts import tts
 from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
 from . import vision
+from . import self_modify
+from .self_modify_agent import generate_skill, build_init_update
+
+_pending_mod: dict | None = None   # proposta in attesa di conferma
 
 log = logging.getLogger("ws")
 
@@ -102,6 +106,17 @@ async def handle_ws(ws: WebSocket):
                 working_memory.clear()
                 await manager.send({"type": "memory_cleared"})
 
+            elif msg_type == "apply_patch":
+                if _pending_mod:
+                    await _apply_pending()
+                else:
+                    await manager.send({"type": "response_chunk",
+                                        "content": "Nessuna modifica in attesa.", "stream": False})
+                    await manager.send({"type": "response_done", "state": "idle"})
+
+            elif msg_type == "reject_patch":
+                await _reject_pending()
+
             elif msg_type == "memory_dump":
                 from .memory_store import memory_store
                 facts    = memory_store.get_facts()
@@ -135,10 +150,14 @@ async def _respond(user_input: str):
     match = skill_router.route(user_input)
     if match:
         skill, params = match
-        # Screen vision: chiede a Swift di catturare lo schermo — risposta arriverà come vision_request
+        # Screen vision: chiede a Swift di catturare lo schermo
         if skill.name == "screen_vision":
             await manager.send({"type": "capture_screen", "prompt": user_input})
             await manager.send({"type": "orb_state", "state": "listening"})
+            return
+        # Self-modify: genera codice e invia proposta di modifica
+        if skill.name == "self_modify":
+            await _handle_self_modify(user_input)
             return
         try:
             skill_context = await skill.run(user_input, params)
@@ -199,3 +218,84 @@ async def _respond_vision(image_b64: str, prompt: str):
     if result.strip():
         tts.speak(result.strip())
         asyncio.create_task(extract_and_save(f"[screenshot] {prompt}", result))
+
+
+# ── Self-modification ─────────────────────────────────────────────────────────
+
+async def _handle_self_modify(user_input: str):
+    global _pending_mod
+    await manager.send({"type": "orb_state", "state": "thinking"})
+    await manager.send({"type": "response_chunk",
+                        "content": "Sto generando il codice...\n", "stream": True})
+
+    skill_info = await generate_skill(user_input)
+    if not skill_info:
+        await manager.send({"type": "response_chunk",
+                            "content": "Non sono riuscita a generare il codice. Riprova con una descrizione più precisa.",
+                            "stream": False})
+        await manager.send({"type": "response_done", "state": "idle"})
+        return
+
+    # Leggi file esistenti per calcolare diff
+    changes = []
+
+    # File nuova skill
+    new_skill_content = skill_info["content"]
+    changes.append({"rel_path": skill_info["filename"], "content": new_skill_content})
+
+    # File __init__.py aggiornato
+    current_init  = self_modify.read_file("skills/__init__.py")
+    module_name   = skill_info["filename"].replace("skills/", "").replace(".py", "")
+    updated_init  = build_init_update(skill_info["class_name"], module_name, current_init)
+    diff_init     = self_modify.compute_diff(current_init, updated_init, "skills/__init__.py")
+    changes.append({"rel_path": "skills/__init__.py", "content": updated_init})
+
+    _pending_mod = {"changes": changes, "skill_name": skill_info["skill_name"]}
+
+    # Mostra diff nel pannello risposta
+    summary = (
+        f"PROPOSTA DI MODIFICA\n"
+        f"{'─' * 56}\n\n"
+        f"Nuova skill: {skill_info['class_name']} ({skill_info['filename']})\n\n"
+        f"── {skill_info['filename']} ──\n{new_skill_content}\n\n"
+        f"── skills/__init__.py (diff) ──\n{diff_init}\n\n"
+        f"{'─' * 56}\n"
+        f"Scrivi 'applica' per confermare o 'annulla' per rifiutare."
+    )
+
+    await manager.send({"type": "response_chunk", "content": summary, "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+    await manager.send({"type": "diff_proposal",
+                        "description": f"Nuova skill: {skill_info['class_name']}"})
+
+
+async def _apply_pending():
+    global _pending_mod
+    if not _pending_mod:
+        return
+    mod = _pending_mod
+    _pending_mod = None
+
+    await manager.send({"type": "orb_state", "state": "thinking"})
+    await manager.send({"type": "response_chunk",
+                        "content": "Applicazione modifiche...", "stream": True})
+
+    self_modify.apply_changes(mod["changes"])
+    commit_out = self_modify.git_commit(f"feat: skill '{mod['skill_name']}' via self-modify")
+
+    await manager.send({"type": "response_chunk",
+                        "content": f"\n\nModifiche applicate. {commit_out}\nRiavvio in corso...",
+                        "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+    await manager.send({"type": "modification_applied"})
+
+    tts.speak("Fatto. Mi sto riavviando per caricare la nuova skill.")
+    self_modify.restart_daemon()
+
+
+async def _reject_pending():
+    global _pending_mod
+    _pending_mod = None
+    await manager.send({"type": "response_chunk",
+                        "content": "Modifica annullata. Nessun file modificato.", "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})

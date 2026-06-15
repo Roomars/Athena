@@ -1,11 +1,13 @@
-from .open_app      import OpenAppSkill
-from .web_search    import WebSearchSkill
-from .system_info   import SystemInfoSkill
-from .clipboard     import ClipboardSkill
-from .screen_vision import ScreenVisionSkill
+from .open_app         import OpenAppSkill
+from .web_search       import WebSearchSkill
+from .system_info      import SystemInfoSkill
+from .clipboard        import ClipboardSkill
+from .screen_vision    import ScreenVisionSkill
+from .self_modify_skill import SelfModifySkill
 
 ALL_SKILLS = [
-    ScreenVisionSkill(), # prima: pattern specifici, intercettata da ws_handler
+    SelfModifySkill(),   # prima: intercettata da ws_handler, guardrail esplicito
+    ScreenVisionSkill(),
     SystemInfoSkill(),
     OpenAppSkill(),
     ClipboardSkill(),
