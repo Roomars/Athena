@@ -6,6 +6,7 @@ struct AriSettings: Codable {
     var hotkeyKeyCode:  Int    = 0          // 0 = tasto "A"
     var hotkeyModifiers: UInt64 = 1_179_648 // Cmd(1048576) + Shift(131072)
     var wakeWordEnabled: Bool = false
+    var clapWakeEnabled: Bool = false
     var ttsEnabled:      Bool = true
     var ttsVoice:        String = "Federica (Premium)"
     var setupCompleted:  Bool = false

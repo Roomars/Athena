@@ -10,6 +10,7 @@ final class SettingsWindowController: NSWindowController {
     // Sezione Voce
     private var ttsSwitch:     NSSwitch!
     private var wakeSwitch:    NSSwitch!
+    private var clapSwitch:    NSSwitch!
     private var hotkeyLabel:   NSTextField!
     private var recordingMode  = false
     private var localMonitor:  Any?
@@ -156,26 +157,35 @@ final class SettingsWindowController: NSWindowController {
         wakeSwitch.action = #selector(wakeChanged)
         view.addSubview(wakeSwitch)
 
-        let sep1 = NSBox(frame: NSRect(x: pad, y: 186, width: 340, height: 1))
+        let clapLbl = label("Doppio battito (Iron Man)", size: 13)
+        clapLbl.frame = NSRect(x: pad, y: 170, width: 220, height: 20)
+        view.addSubview(clapLbl)
+
+        clapSwitch = NSSwitch(frame: NSRect(x: 300, y: 166, width: 60, height: 28))
+        clapSwitch.target = self
+        clapSwitch.action = #selector(clapChanged)
+        view.addSubview(clapSwitch)
+
+        let sep1 = NSBox(frame: NSRect(x: pad, y: 150, width: 340, height: 1))
         sep1.boxType = .separator
         view.addSubview(sep1)
 
         // — SCORCIATOIA —
         let hdr2 = label("SCORCIATOIA TASTIERA", bold: true)
-        hdr2.frame = NSRect(x: pad, y: 162, width: 280, height: 16)
+        hdr2.frame = NSRect(x: pad, y: 126, width: 280, height: 16)
         view.addSubview(hdr2)
 
         let sub = label("Attiva / disattiva la registrazione vocale", size: 11)
-        sub.frame = NSRect(x: pad, y: 142, width: 300, height: 16)
+        sub.frame = NSRect(x: pad, y: 106, width: 300, height: 16)
         view.addSubview(sub)
 
         hotkeyLabel = NSTextField(labelWithString: currentHotkeyString())
         hotkeyLabel.font      = .monospacedSystemFont(ofSize: 20, weight: .semibold)
         hotkeyLabel.textColor = NSColor(red: 0, green: 0.85, blue: 1, alpha: 1)
-        hotkeyLabel.frame     = NSRect(x: pad, y: 100, width: 160, height: 30)
+        hotkeyLabel.frame     = NSRect(x: pad, y: 66, width: 160, height: 30)
         view.addSubview(hotkeyLabel)
 
-        let editBtn = NSButton(frame: NSRect(x: 200, y: 100, width: 120, height: 28))
+        let editBtn = NSButton(frame: NSRect(x: 200, y: 66, width: 120, height: 28))
         editBtn.title      = "Modifica"
         editBtn.bezelStyle = .rounded
         editBtn.target     = self
@@ -209,6 +219,13 @@ final class SettingsWindowController: NSWindowController {
         SettingsManager.shared.settings.wakeWordEnabled = on
         SettingsManager.shared.save()
         if on { WakeWordManager.shared.start() } else { WakeWordManager.shared.stop() }
+    }
+
+    @objc private func clapChanged() {
+        let on = clapSwitch.state == .on
+        SettingsManager.shared.settings.clapWakeEnabled = on
+        SettingsManager.shared.save()
+        if on { ClapWakeManager.shared.start() } else { ClapWakeManager.shared.stop() }
     }
 
     // MARK: - Hotkey recorder
@@ -258,6 +275,7 @@ final class SettingsWindowController: NSWindowController {
         let s = SettingsManager.shared.settings
         ttsSwitch?.state  = s.ttsEnabled      ? .on : .off
         wakeSwitch?.state = s.wakeWordEnabled  ? .on : .off
+        clapSwitch?.state = s.clapWakeEnabled  ? .on : .off
         hotkeyLabel?.stringValue = currentHotkeyString()
     }
 

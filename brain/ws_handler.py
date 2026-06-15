@@ -63,7 +63,13 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _notify_tts_done():
+    await manager.send({"type": "tts_done"})
+
+
 async def handle_ws(ws: WebSocket):
+    tts.set_loop(asyncio.get_event_loop())
+    tts.set_done_callback(_notify_tts_done)
     await manager.connect(ws)
     try:
         while True:
@@ -204,9 +210,9 @@ async def _respond(user_input: str):
     await manager.send({"type": "response_done", "state": "idle"})
     log.info(f"risposta completata ({len(full_response)} chars)")
 
-    # TTS: Ari parla la risposta in background
+    # TTS: Ari parla la risposta (codice escluso)
     if full_response.strip():
-        tts.speak(full_response.strip())
+        tts.speak(_tts_text(full_response))
 
     # Memoria: estrae fatti in background senza bloccare
     if full_response.strip():
@@ -230,7 +236,7 @@ async def _respond_vision(image_b64: str, prompt: str):
     await manager.send({"type": "response_done", "state": "idle"})
 
     if result.strip():
-        tts.speak(result.strip())
+        tts.speak(_tts_text(result))
         asyncio.create_task(extract_and_save(f"[screenshot] {prompt}", result))
 
 
@@ -380,6 +386,29 @@ def _handle_save_to(response: str) -> None:
 async def _send_error(msg: str):
     await manager.send({"type": "response_chunk", "content": msg, "stream": False})
     await manager.send({"type": "response_done", "state": "idle"})
+
+
+def _tts_text(response: str) -> str:
+    """Prepara la risposta per il TTS: rimuove codice e markdown, tronca a 400 char."""
+    import re
+    # Blocchi multi-linea ```...```
+    text = re.sub(r'```[\s\S]*?```', ' Il codice è nel pannello. ', response)
+    # Inline code `...`
+    text = re.sub(r'`[^`\n]+`', '', text)
+    # Header markdown
+    text = re.sub(r'#{1,6}\s+', '', text)
+    # Bold / italic
+    text = re.sub(r'\*{1,2}([^*\n]+)\*{1,2}', r'\1', text)
+    text = re.sub(r'_{1,2}([^_\n]+)_{1,2}',   r'\1', text)
+    # Liste e trattini
+    text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
+    # Newline multipli → pausa naturale
+    text = re.sub(r'\n{2,}', '. ', text)
+    text = re.sub(r'\s{2,}', ' ', text).strip()
+    # Tronca preservando parola intera
+    if len(text) > 400:
+        text = text[:400].rsplit(' ', 1)[0] + '.'
+    return text or response.strip()[:400]
 
 
 def _build_summary(changes: list[dict], description: str) -> str:

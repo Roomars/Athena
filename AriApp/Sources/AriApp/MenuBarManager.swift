@@ -24,6 +24,9 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         wireCallbacks()
         wireSnapManager()
         NotificationManager.shared.setup()
+        // Riattiva wake systems se erano abilitati
+        let s = SettingsManager.shared.settings
+        if s.clapWakeEnabled { ClapWakeManager.shared.start() }
     }
 
     // MARK: - Status item
@@ -356,6 +359,23 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         }
         vm.onError = { [weak self] _ in
             self?.resetMicButton()
+            // Errore STT: riavvia wake subito (nessun TTS in corso)
+            let s = SettingsManager.shared.settings
+            if s.wakeWordEnabled { WakeWordManager.shared.start() }
+            if s.clapWakeEnabled { ClapWakeManager.shared.start() }
+        }
+
+        // TTS done → riavvia wake DOPO che Ari ha finito di parlare (evita il loop)
+        WebSocketManager.shared.onTTSDone = { [weak self] in
+            guard self != nil else { return }
+            let s = SettingsManager.shared.settings
+            guard s.wakeWordEnabled || s.clapWakeEnabled else { return }
+            // Breve delay per evitare che il microfono catturi la coda audio del TTS
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                guard !VoiceManager.shared.isRecording else { return }
+                if s.wakeWordEnabled { WakeWordManager.shared.start() }
+                if s.clapWakeEnabled { ClapWakeManager.shared.start() }
+            }
         }
 
         // Vision — cattura schermo su richiesta di Python
@@ -377,14 +397,23 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
             }
         }
 
-        // Wake word — "ehi ari" avvia registrazione VAD automatica
+        // Wake word — "ehi ari"
         WakeWordManager.shared.onWakeDetected = { [weak self] in
             guard let self else { return }
-            // Feedback visivo immediato
+            ClapWakeManager.shared.stop()
             self.micButton?.contentTintColor = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
             self.micButton?.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Registra")
             WebSocketManager.shared.sendVoiceStart()
-            // Avvia con VAD — stop automatico dopo 3s di silenzio
+            VoiceManager.shared.startRecording(useVAD: true)
+        }
+
+        // Doppio battito — stile Iron Man
+        ClapWakeManager.shared.onWakeDetected = { [weak self] in
+            guard let self else { return }
+            WakeWordManager.shared.stop()
+            self.micButton?.contentTintColor = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
+            self.micButton?.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Registra")
+            WebSocketManager.shared.sendVoiceStart()
             VoiceManager.shared.startRecording(useVAD: true)
         }
     }
@@ -426,7 +455,6 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         guard let text = inputField?.stringValue.trimmingCharacters(in: .whitespaces),
               !text.isEmpty else { return }
         inputField?.stringValue = ""
-        // Shortcut testuali per approvazione modifica
         let lower = text.lowercased()
         if lower == "applica" {
             ApprovalBanner.shared.dismiss()
@@ -434,6 +462,10 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         } else if lower == "annulla" {
             ApprovalBanner.shared.dismiss()
             WebSocketManager.shared.sendJSON(["type": "reject_patch"])
+        } else if lower == "stop" || lower == "basta" || lower == "silenzio"
+               || lower == "ferma" || lower == "ari stop" || lower == "ari ferma"
+               || lower.hasSuffix(" stop") || lower.hasSuffix(" ferma") {
+            WebSocketManager.shared.sendJSON(["type": "tts_stop"])
         } else {
             WebSocketManager.shared.send(content: text)
         }

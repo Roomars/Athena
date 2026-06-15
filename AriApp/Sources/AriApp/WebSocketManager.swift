@@ -27,6 +27,7 @@ final class WebSocketManager: ObservableObject {
     var onStatsUpdate:           (([String: Any]) -> Void)?
     var onCaptureScreen:         ((String) -> Void)?
     var onDiffProposal:          ((String) -> Void)?
+    var onTTSDone:               (() -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -159,8 +160,10 @@ final class WebSocketManager: ObservableObject {
                 self.handleRebuild()
 
             case "modification_applied":
-                // Solo Python modificato — DaemonManager lo riavvierà
                 break
+
+            case "tts_done":
+                self.onTTSDone?()
 
             default:
                 break
