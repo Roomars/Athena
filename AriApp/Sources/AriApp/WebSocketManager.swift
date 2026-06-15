@@ -23,6 +23,7 @@ final class WebSocketManager: ObservableObject {
     var onResponseDone:          ((String) -> Void)?
     var onSTTResult:             ((String) -> Void)?
     var onProactiveNotification: ((String, String) -> Void)?  // (title, body)
+    var onMemoryDump:            (([String: String], [[String: Any]]) -> Void)?
 
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -58,6 +59,10 @@ final class WebSocketManager: ObservableObject {
 
     func clearMemory() {
         sendJSON(["type": "clear_memory"])
+    }
+
+    func requestMemoryDump() {
+        sendJSON(["type": "memory_dump"])
     }
 
     // MARK: - Private
@@ -125,6 +130,11 @@ final class WebSocketManager: ObservableObject {
             case "memory_cleared":
                 self.lastResponse = ""
                 self.streamingText = ""
+
+            case "memory_dump_response":
+                let facts    = msg["facts"]    as? [String: String]  ?? [:]
+                let episodes = msg["episodes"] as? [[String: Any]]   ?? []
+                self.onMemoryDump?(facts, episodes)
 
             default:
                 break

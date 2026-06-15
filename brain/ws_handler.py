@@ -95,6 +95,16 @@ async def handle_ws(ws: WebSocket):
                 working_memory.clear()
                 await manager.send({"type": "memory_cleared"})
 
+            elif msg_type == "memory_dump":
+                from .memory_store import memory_store
+                facts    = memory_store.get_facts()
+                episodes = memory_store.get_recent_episodes(n=200)
+                await manager.send({
+                    "type":     "memory_dump_response",
+                    "facts":    facts,
+                    "episodes": episodes,
+                })
+
             else:
                 log.warning(f"messaggio sconosciuto: {msg_type}")
 

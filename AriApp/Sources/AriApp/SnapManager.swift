@@ -13,15 +13,23 @@ final class SnapManager {
 
     func register(_ panels: [AriPanel]) {
         groups = panels.map { [$0] }
-        for p in panels {
-            lastPositions[ObjectIdentifier(p)] = p.frame.origin
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(panelDidMove(_:)),
-                name: NSWindow.didMoveNotification,
-                object: p
-            )
-        }
+        for p in panels { observe(p) }
+    }
+
+    // Aggiunge un panel creato dopo la registrazione iniziale (es. MemoryPanel)
+    func registerExtra(_ panel: AriPanel) {
+        groups.append([panel])
+        observe(panel)
+    }
+
+    private func observe(_ panel: AriPanel) {
+        lastPositions[ObjectIdentifier(panel)] = panel.frame.origin
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(panelDidMove(_:)),
+            name: NSWindow.didMoveNotification,
+            object: panel
+        )
     }
 
     // MARK: - Move sync
