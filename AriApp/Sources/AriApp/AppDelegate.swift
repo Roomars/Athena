@@ -14,8 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DaemonManager.shared.start()
 
-        HotkeyManager.shared.onToggle = { [weak self] in
-            self?.menuBar.toggleOrbVisibility()
+        HotkeyManager.shared.onActivate = { [weak self] in
+            self?.menuBar.activateVoiceHotkey()
         }
         HotkeyManager.shared.start()
 

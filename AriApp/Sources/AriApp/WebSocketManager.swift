@@ -18,6 +18,12 @@ final class WebSocketManager: ObservableObject {
     @Published var isConnected = false
     @Published var modelState: ModelState = .loading
 
+    // Callback AppKit puro
+    var onTextChunk:             ((String) -> Void)?
+    var onResponseDone:          ((String) -> Void)?
+    var onSTTResult:             ((String) -> Void)?
+    var onProactiveNotification: ((String, String) -> Void)?  // (title, body)
+
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
 
@@ -40,6 +46,11 @@ final class WebSocketManager: ObservableObject {
         let msg: [String: Any] = ["type": "user_input", "content": content, "mode": "text"]
         sendJSON(msg)
     }
+
+    func sendVoiceStart() { sendJSON(["type": "voice_start"]) }
+    func sendVoiceStop()  { sendJSON(["type": "voice_stop"])  }
+    func sendTTSStop()    { sendJSON(["type": "tts_stop"])    }
+    func setTTSEnabled(_ on: Bool) { sendJSON(["type": "tts_enabled", "enabled": on]) }
 
     func sendPrivacyMode(enabled: Bool) {
         sendJSON(["type": "privacy_mode", "enabled": enabled])
@@ -87,11 +98,13 @@ final class WebSocketManager: ObservableObject {
             case "response_chunk":
                 let token = msg["content"] as? String ?? ""
                 self.streamingText += token
+                self.onTextChunk?(self.streamingText)
 
             case "response_done":
                 self.lastResponse = self.streamingText
                 self.streamingText = ""
                 self.orbState = .idle
+                self.onResponseDone?(self.lastResponse)
 
             case "model_loading":
                 self.modelState = .loading
@@ -99,6 +112,15 @@ final class WebSocketManager: ObservableObject {
             case "model_ready":
                 let modelId = msg["model"] as? String ?? "mlx"
                 self.modelState = .ready(modelId)
+
+            case "stt_result":
+                let text = msg["text"] as? String ?? ""
+                self.onSTTResult?(text)
+
+            case "proactive_notification":
+                let title = msg["title"] as? String ?? "Ari"
+                let body  = msg["body"]  as? String ?? ""
+                self.onProactiveNotification?(title, body)
 
             case "memory_cleared":
                 self.lastResponse = ""

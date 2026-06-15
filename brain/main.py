@@ -9,6 +9,8 @@ from .logging_config import setup_logging
 from .settings import load as load_settings
 from .llm import engine, MODEL_PRIMARY
 from .ws_handler import handle_ws, manager
+from .tts import tts
+from .proactive.monitor import monitor_loop
 
 setup_logging()
 load_settings()
@@ -31,6 +33,9 @@ async def startup():
 
     engine.on_ready.append(on_model_ready)
     engine.load_async(MODEL_PRIMARY)
+
+    # Monitor proattivo — gira in background ogni 60s
+    asyncio.create_task(monitor_loop(manager, tts))
 
 
 @app.on_event("shutdown")

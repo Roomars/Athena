@@ -2,24 +2,18 @@ import Foundation
 
 struct AriSettings: Codable {
     var version: Int = 1
-    var hotkey: String = "cmd+shift+a"
+    // Hotkey voce — keyCode + modifiers (CGEventFlags raw)
+    var hotkeyKeyCode:  Int    = 0          // 0 = tasto "A"
+    var hotkeyModifiers: UInt64 = 1_179_648 // Cmd(1048576) + Shift(131072)
     var wakeWordEnabled: Bool = false
-    var orbPosition: String = "notch"
-    var ttsVoice: String = "Federica (Premium)"
-    var setupCompleted: Bool = false
-
-    enum CodingKeys: String, CodingKey {
-        case version, hotkey
-        case wakeWordEnabled = "wake_word_enabled"
-        case orbPosition = "orb_position"
-        case ttsVoice = "tts_voice"
-        case setupCompleted = "setup_completed"
-    }
+    var ttsEnabled:      Bool = true
+    var ttsVoice:        String = "Federica (Premium)"
+    var setupCompleted:  Bool = false
 }
 
 final class SettingsManager {
     static let shared = SettingsManager()
-    private(set) var settings = AriSettings()
+    var settings = AriSettings()
 
     private var url: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!

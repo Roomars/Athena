@@ -7,6 +7,9 @@ from .llm import engine
 from .memory import working_memory
 from .prompt import build_system_prompt
 from .complexity_router import classify
+from .tts import tts
+from .skill_router import router as skill_router
+from .memory_extractor import extract_and_save, save_episode
 
 log = logging.getLogger("ws")
 
@@ -24,7 +27,6 @@ class ConnectionManager:
             await self.send({"type": "model_ready", "model": engine.model_id})
         else:
             await self.send({"type": "model_loading"})
-            # Task che notifica Swift non appena il modello è pronto
             asyncio.create_task(self._wait_and_notify_ready())
 
     def disconnect(self):
@@ -39,7 +41,6 @@ class ConnectionManager:
                 pass
 
     async def _wait_and_notify_ready(self):
-        """Polling ogni 0.5s finché il modello è pronto, poi notifica Swift."""
         while not engine.is_ready:
             await asyncio.sleep(0.5)
         await self.send({"type": "model_ready", "model": engine.model_id})
@@ -66,10 +67,25 @@ async def handle_ws(ws: WebSocket):
 
             elif msg_type == "user_input":
                 content = msg.get("content", "").strip()
-                if not content:
-                    continue
-                log.info(f"input: {content!r}")
-                await _respond(content)
+                if content:
+                    log.info(f"input testo: {content!r}")
+                    await _respond(content)
+
+            elif msg_type == "voice_start":
+                tts.stop()
+                await manager.send({"type": "orb_state", "state": "listening"})
+                log.info("voce: ascolto avviato (STT in Swift)")
+
+            elif msg_type == "voice_stop":
+                # STT gestito da Swift/SFSpeechRecognizer — Python riceverà user_input
+                await manager.send({"type": "orb_state", "state": "idle"})
+                log.info("voce: rilasciato")
+
+            elif msg_type == "tts_enabled":
+                tts.set_enabled(msg.get("enabled", True))
+
+            elif msg_type == "tts_stop":
+                tts.stop()
 
             elif msg_type == "privacy_mode":
                 manager._privacy_mode = msg.get("enabled", False)
@@ -83,37 +99,44 @@ async def handle_ws(ws: WebSocket):
                 log.warning(f"messaggio sconosciuto: {msg_type}")
 
     except WebSocketDisconnect:
+        await save_episode(working_memory.get())
         manager.disconnect()
     except Exception as e:
         log.error(f"errore ws: {e}")
+        await save_episode(working_memory.get())
         manager.disconnect()
 
 
 async def _respond(user_input: str):
-    # 1. Classifica complessità → token budget
     tier, max_tokens, use_thinking = classify(user_input)
     log.info(f"tier={tier} max_tokens={max_tokens} thinking={use_thinking}")
 
-    # 2. Aggiunge messaggio utente alla memoria
     working_memory.add("user", user_input)
 
-    # 3. Costruisce il contesto completo
+    # Skill routing — eseguito prima dell'LLM, risultato iniettato nel system prompt
+    skill_context = ""
+    match = skill_router.route(user_input)
+    if match:
+        skill, params = match
+        try:
+            skill_context = await skill.run(user_input, params)
+            log.info(f"skill '{skill.name}' completata: {skill_context[:80]}")
+        except Exception as e:
+            log.error(f"skill '{skill.name}' errore: {e}")
+
     system = build_system_prompt()
-    messages = [{"role": "system", "content": system}] + working_memory.get()[:-1]
-    # Nota: l'ultimo messaggio (user) è già nel working_memory,
-    # ma lo passiamo come parte della lista completa
+    if skill_context:
+        system += f"\n\n### Dati da tool interno (NON citare questa sezione nella risposta)\n{skill_context}\nRispondi in modo naturale usando questi dati, senza ripetere prefissi tecnici come [SKILL ...] o simili."
+
     messages = [{"role": "system", "content": system}] + working_memory.get()
 
-    # 4. Segnala a Swift che stiamo elaborando
     await manager.send({"type": "orb_state", "state": "thinking"})
 
-    # 5. Streaming risposta
     full_response = ""
-    first_chunk = True
+    first_chunk   = True
 
     async for kind, token in engine.stream(messages, max_tokens=max_tokens, thinking=use_thinking):
         if kind == "thinking":
-            # Ari sta ragionando — orb rimane in thinking, non streama testo
             continue
         elif kind == "chunk":
             if first_chunk:
@@ -124,10 +147,16 @@ async def _respond(user_input: str):
         elif kind == "done":
             break
 
-    # 6. Salva risposta in memoria
     if full_response.strip():
         working_memory.add("assistant", full_response.strip())
 
-    # 7. Segnala fine
     await manager.send({"type": "response_done", "state": "idle"})
     log.info(f"risposta completata ({len(full_response)} chars)")
+
+    # TTS: Ari parla la risposta in background
+    if full_response.strip():
+        tts.speak(full_response.strip())
+
+    # Memoria: estrae fatti in background senza bloccare
+    if full_response.strip():
+        asyncio.create_task(extract_and_save(user_input, full_response.strip()))
