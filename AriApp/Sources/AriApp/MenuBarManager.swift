@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-private final class AriPanel: NSPanel {
-    override var canBecomeKey: Bool  { true }
-    override var canBecomeMain: Bool { true }
-}
-
 // Tre finestre indipendenti:
 //   orbPanel      — orb animato, trasparente
 //   responsePanel — testo risposta, ridimensionabile
@@ -27,8 +22,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         buildResponsePanel()
         buildInputPanel()
         wireCallbacks()
+        wireSnapManager()
         NotificationManager.shared.setup()
-        // Wake word disabilitato di default — attivabile dal menu tasto destro
     }
 
     // MARK: - Status item
@@ -86,6 +81,49 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     }
 
     @objc private func quitAri() { NSApp.terminate(nil) }
+
+    // MARK: - Snap Manager
+
+    private func wireSnapManager() {
+        let panels = [orbPanel, responsePanel, inputPanel].compactMap { $0 }
+        SnapManager.shared.register(panels)
+        for panel in panels {
+            panel.onRightClick = { [weak self, weak panel] event in
+                guard let self, let panel else { return }
+                self.showPanelContextMenu(for: panel, event: event)
+            }
+        }
+    }
+
+    private func showPanelContextMenu(for panel: AriPanel, event: NSEvent) {
+        let menu = NSMenu()
+
+        if SnapManager.shared.isInGroup(panel) {
+            let sep = NSMenuItem(title: "Separa widget", action: #selector(separatePanel(_:)), keyEquivalent: "")
+            sep.target = self
+            sep.representedObject = panel
+            menu.addItem(sep)
+            menu.addItem(.separator())
+        }
+
+        let hide = NSMenuItem(title: "Nascondi", action: #selector(hidePanelItem(_:)), keyEquivalent: "")
+        hide.target = self
+        hide.representedObject = panel
+        menu.addItem(hide)
+
+        guard let cv = panel.contentView else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: cv)
+    }
+
+    @objc private func separatePanel(_ item: NSMenuItem) {
+        guard let panel = item.representedObject as? AriPanel else { return }
+        SnapManager.shared.separate(panel)
+    }
+
+    @objc private func hidePanelItem(_ item: NSMenuItem) {
+        guard let panel = item.representedObject as? AriPanel else { return }
+        panel.orderOut(nil)
+    }
 
     // MARK: - Orb (trasparente, no chrome)
 
