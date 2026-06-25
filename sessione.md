@@ -5,7 +5,7 @@
 L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria/skills).
 
 ## Lavoro corrente
-**FASE 1–7 ✅ completate. FASE 8A ✅ completata. Prossima: FASE 8B.**
+**FASE 1–7 ✅ completate. FASE 8A ✅ completata. FASE 8B in corso — 3/5 tool completati.**
 
 ### FASE 8A — Tool Expansion batch 1 (completata)
 - `safari_control`: naviga in Safari via osascript — "vai su X", "apri URL", "ricarica pagina"
@@ -39,9 +39,51 @@ L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria
 
 ## Prossime priorità
 
-1. **FASE 8B** — file_processor (PDF/CSV/audio), youtube, send_message via Messages.app, flight_finder, game_updater
-2. **FASE 8C** — browser_control (Playwright), computer_control (PyAutoGUI), code_runner sandbox
+1. **FASE 8B** — ✅ file_processor, ✅ youtube, ✅ send_message | da fare: flight_finder, game_updater
+2. **FASE 8C** — browser_control (Playwright), computer_control VLM-driven (ispirazione UI-TARS), code_runner sandbox
 3. **FASE 9** — UI Evolution: audio waveform nell'orb, state label, grid dot background
+
+---
+
+## Pattern acquisiti da analisi repo (da integrare)
+
+Cinque repo analizzati come riferimento permanente (salvati in memory):
+
+| Repo | Stelle | Pattern chiave per Ari | Quando |
+|---|---|---|---|
+| Open Notebook | 33k | Multi-query RAG (5 query in parallelo), source ingestion pipeline, ModelManager (4B vs 14B auto) | Memoria v2 + file_processor FASE 8B |
+| claude-code-best | 20k | Skill learning evolutivo (osserva gap → genera skill), goal system multi-turno, forked agent memory | FASE 7 upgrade post 8C |
+| JCode | 7.8k | Memory DiGraph (Supersedes/Contradicts), hybrid retrieval BM25+dense recall@0.75, ambient mode | Memoria v2 post FASE 8 |
+| Supervision | 44.9k | Object detection agnostic (YOLO+Transformers), ByteTracker, ZoneAnnotator, heatmap | FASE 6 upgrade (screen awareness strutturata) |
+| UI-TARS Desktop | 37.2k | GUI automation VLM-driven (screenshot→Gemma4→coordinate→azione), ibrido GUI+DOM | FASE 8C computer_control |
+
+### Integrazioni concrete per fase
+
+**FASE 8B — file_processor:**
+- Usare `content-core` (Open Notebook) invece di costruire da zero — supporta 50+ formati
+- Pattern ingestion: file → extract → vectorize (async) → auto-summary (Transformation pattern)
+- ModelManager: file brevi → Qwen3-4B, file lunghi → Qwen3-14B auto
+
+**FASE 8C — computer_control:**
+- Non PyAutoGUI statico con coordinate hardcoded
+- Pattern UI-TARS: cattura screenshot (VisionCapture già presente) → Gemma 4 12B "dove si trova X?" → coordinate → click/type
+- browser_control: Playwright per DOM + Gemma 4 per visual confirmation (hybrid come UI-TARS)
+
+**FASE 6 upgrade (screen awareness):**
+- Aggiungere Supervision sopra VisionCapture per output strutturato
+- Pattern: screenshot → YOLO local (MPS/CoreML) → sv.Detections → JSON → Gemma 4 sintesi
+- Use case: "quante app aperte", "c'è qualcosa di anomalo", zone counting finestre
+
+**Memoria v2 (post FASE 8, dedicata):**
+- Sostituire SQLite facts flat con DiGraph (networkx) — nodi Memory/Tag/Cluster
+- Edge types: Supersedes, Contradicts, RelatesTo, DerivedFrom
+- Retrieval: embedding cosine + BM25 (rank-bm25) + RRF → recall@5 da 0.0 a 0.75
+- Multi-query: 3-5 query parallele dalla domanda utente (Open Notebook pattern)
+- Post-retrieval: confidence boost/decay async, gap detection
+
+**Skill learning evolutivo (post FASE 8):**
+- Ari osserva i propri fallimenti → accumula in gap store → genera nuova skill autonomamente
+- Goal system: "Ari, completa FASE 8B" → goal persistente multi-sessione con token budget
 
 ### FASE 8 — Tool Expansion (da Mark-XL, 14 nuovi tool)
 
@@ -86,7 +128,7 @@ L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria
 Nessuno.
 
 ## Ultimo aggiornamento
-15-06-2026 - 23:19
+26-06-2026 - 00:30
 
 ## Changelog
 - 14-06-2026 15:23: Sessione progettazione completa — IdeasProject/ creato (16 doc, 34 decisioni), stack MLX confermato, nome AI = Ari, due modalità UI (notch + chat), roadmap 10 fasi definita
@@ -96,3 +138,5 @@ Nessuno.
 - 15-06-2026 00:00: FASE 3 ✅ (STT SFSpeechRecognizer, hold-to-talk, auto-send, VAD). FASE 4 ✅ (Skills C/B/A: open_app+alias italiani, wake word opt-in con fix -10877, memoria SQLite+estrazione LLM). FASE 5 ✅ (monitor proattivo: batteria/CPU/RAM/saluti, notifiche osascript). Menu ristrutturato, SettingsWindowController con hotkey personalizzabile.
 - 15-06-2026 19:30: FASE 5B ✅ (SnapManager widget magnetici, MemoryPanel, StatsPanel+AnomalyDetector). FASE 6 ✅ (VisionCapture + Gemma 4 12B). FASE 7 ✅ (self-modify: classify→generate→diff→ApprovalBanner→apply→git→restart). Nuove skill: web_fetch, file_ops. ClapWakeManager (doppio battito, Iron Man). TTS smart (no lettura codice). Comandi rapidi stop/basta. Roadmap FASE 8-10 definita da analisi Mark-XL (14 tool, UI evolution, upgrade STT).
 - 15-06-2026 23:19: FASE 8A ✅ (safari_control, weather, reminder, mac_settings, desktop_control — 13 tool totali attivi). Bug fix loop vocale (tts_done event-driven). "ferma" aggiunto stop. Constitution aggiornata con sezione CAPACITÀ. Self-modify regex espansa. Analisi UI Mark-XL (palette ciano+arancio, HUD waveform → ispirazione FASE 9).
+- 25-06-2026 11:30: Analisi 5 repo di riferimento permanente (Open Notebook, claude-code-best, JCode, Supervision, UI-TARS Desktop). Pattern integrati nella roadmap: computer_control VLM-driven (FASE 8C), file_processor con content-core (8B), screen awareness strutturata Supervision (FASE 6 upgrade), Memoria v2 DiGraph+BM25 (post 8), skill learning evolutivo (post 8).
+- 26-06-2026 00:30: FASE 8B avviata — 3 tool completati: file_processor (PDF/CSV/DOCX/immagini/audio), youtube (search+info+transcript), send_message (Messages.app osascript). 16 skill totali attive. Prossima sessione: flight_finder + game_updater → FASE 8B completa.
