@@ -17,13 +17,17 @@ final class WebSocketManager: ObservableObject {
     @Published var lastResponse: String = ""
     @Published var isConnected = false
     @Published var modelState: ModelState = .loading
+    @Published var cpuLoad: Double = 0.0   // 0.0–1.0, aggiornato da stats_update
 
     // Callback AppKit puro
     var onTextChunk:             ((String) -> Void)?
     var onResponseDone:          ((String) -> Void)?
     var onSTTResult:             ((String) -> Void)?
     var onProactiveNotification: ((String, String) -> Void)?  // (title, body)
-    var onMemoryDump:            (([String: String], [[String: Any]]) -> Void)?
+    /// facts = array di {key,value,tags,confidence,updated_at}
+    /// relations = array di {from_key,to_key,rel_type}
+    /// episodes = array di {summary,timestamp,message_count}
+    var onMemoryDump: (([[String: Any]], [[String: Any]], [[String: Any]]) -> Void)?
     var onStatsUpdate:           (([String: Any]) -> Void)?
     var onCaptureScreen:         ((String) -> Void)?
     var onDiffProposal:          ((String) -> Void)?
@@ -140,11 +144,13 @@ final class WebSocketManager: ObservableObject {
                 self.streamingText = ""
 
             case "memory_dump_response":
-                let facts    = msg["facts"]    as? [String: String]  ?? [:]
-                let episodes = msg["episodes"] as? [[String: Any]]   ?? []
-                self.onMemoryDump?(facts, episodes)
+                let facts     = msg["facts"]     as? [[String: Any]] ?? []
+                let relations = msg["relations"] as? [[String: Any]] ?? []
+                let episodes  = msg["episodes"]  as? [[String: Any]] ?? []
+                self.onMemoryDump?(facts, relations, episodes)
 
             case "stats_update":
+                self.cpuLoad = (msg["cpu_pct"] as? Double ?? 0) / 100.0
                 self.onStatsUpdate?(msg)
 
             case "capture_screen":

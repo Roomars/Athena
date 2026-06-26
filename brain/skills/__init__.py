@@ -14,22 +14,32 @@ from .file_processor  import FileProcessorSkill
 from .file_ops        import FileOpsSkill
 from .screen_vision   import ScreenVisionSkill
 from .self_modify_skill import SelfModifySkill
+from .flight_finder     import FlightFinderSkill
+from .game_updater      import GameUpdaterSkill
+from .code_runner       import CodeRunnerSkill
+from .browser_control   import BrowserControlSkill
+from .computer_control  import ComputerControlSkill
 
 ALL_SKILLS = [
-    SelfModifySkill(),    # prima: intercettata da ws_handler
-    ScreenVisionSkill(),  # prima di web_fetch per evitare conflitti URL
-    SafariControlSkill(), # URL/navigazione → prima di WebSearch
-    YoutubeSkill(),       # URL YouTube + ricerca → prima di web_fetch
-    WebFetchSkill(),      # URL espliciti → prima di WebSearch
+    SelfModifySkill(),       # prima: intercettata da ws_handler
+    ScreenVisionSkill(),     # prima di web_fetch per evitare conflitti URL
+    ComputerControlSkill(),  # prima di SafariControl (clicca su X)
+    SafariControlSkill(),    # URL/navigazione → prima di WebSearch
+    BrowserControlSkill(),   # automazione → prima di SafariControl nei trigger specifici
+    YoutubeSkill(),          # URL YouTube + ricerca → prima di web_fetch
+    WebFetchSkill(),         # URL espliciti → prima di WebSearch
     WeatherSkill(),
+    FlightFinderSkill(),
+    GameUpdaterSkill(),
     SendMessageSkill(),
     ReminderSkill(),
     MacSettingsSkill(),
     DesktopControlSkill(),
+    CodeRunnerSkill(),
     FileProcessorSkill(),
     FileOpsSkill(),
     SystemInfoSkill(),
     OpenAppSkill(),
     ClipboardSkill(),
-    WebSearchSkill(),     # ultima: "cerca" è termine generico
+    WebSearchSkill(),        # ultima: "cerca" è termine generico
 ]

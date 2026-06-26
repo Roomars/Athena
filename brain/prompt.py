@@ -32,6 +32,7 @@ Data e ora corrente: {now}""".strip()
     if facts:
         lines = "\n".join(f"- {k}: {v}" for k, v in facts.items())
         sections.append(f"## Quello che ricordo dell'utente\n{lines}")
+    # nota: retrieve_context() viene chiamato in ws_handler per query-specific injection
 
     episodes = memory_store.get_recent_episodes(3)
     if episodes:

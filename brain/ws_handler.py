@@ -8,6 +8,7 @@ from .memory import working_memory
 from .prompt import build_system_prompt
 from .complexity_router import classify
 from .tts import tts
+from .stt import stt
 from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
 from . import vision
@@ -95,12 +96,13 @@ async def handle_ws(ws: WebSocket):
             elif msg_type == "voice_start":
                 tts.stop()
                 await manager.send({"type": "orb_state", "state": "listening"})
-                log.info("voce: ascolto avviato (STT in Swift)")
+                use_vad = msg.get("vad", False)
+                asyncio.create_task(_stt_start(use_vad))
+                log.info(f"voce: STT Whisper avviato (vad={use_vad})")
 
             elif msg_type == "voice_stop":
-                # STT gestito da Swift/SFSpeechRecognizer — Python riceverà user_input
-                await manager.send({"type": "orb_state", "state": "idle"})
-                log.info("voce: rilasciato")
+                asyncio.create_task(_stt_stop())
+                log.info("voce: stop manuale → trascrizione Whisper")
 
             elif msg_type == "tts_enabled":
                 tts.set_enabled(msg.get("enabled", True))
@@ -135,13 +137,20 @@ async def handle_ws(ws: WebSocket):
 
             elif msg_type == "memory_dump":
                 from .memory_store import memory_store
-                facts    = memory_store.get_facts()
-                episodes = memory_store.get_recent_episodes(n=200)
                 await manager.send({
-                    "type":     "memory_dump_response",
-                    "facts":    facts,
-                    "episodes": episodes,
+                    "type":      "memory_dump_response",
+                    "facts":     memory_store.get_facts_full(),
+                    "relations": memory_store.get_relations(),
+                    "episodes":  memory_store.get_episodes_full(n=200),
                 })
+
+            elif msg_type == "voice_enroll":
+                asyncio.create_task(_voice_enroll())
+
+            elif msg_type == "voice_verify_toggle":
+                from .speaker_verifier import verifier
+                verifier.enabled = msg.get("enabled", True)
+                log.info(f"speaker verification: {verifier.enabled}")
 
             else:
                 log.warning(f"messaggio sconosciuto: {msg_type}")
@@ -153,6 +162,61 @@ async def handle_ws(ws: WebSocket):
         log.error(f"errore ws: {e}")
         await save_episode(working_memory.get())
         manager.disconnect()
+
+
+async def _voice_enroll() -> None:
+    """Registra 8 secondi di voce e crea il profilo per il speaker verification."""
+    import sounddevice as sd
+    import numpy as np
+    from .speaker_verifier import verifier, ENROLL_SEC, SAMPLE_RATE as SV_SR
+
+    await manager.send({"type": "orb_state", "state": "listening"})
+    await manager.send({"type": "response_chunk",
+                        "content": "Registrazione in corso per 8 secondi... parla normalmente.",
+                        "stream": False})
+    await manager.send({"type": "response_done", "state": "listening"})
+
+    loop = asyncio.get_event_loop()
+    def _record():
+        audio = sd.rec(int(ENROLL_SEC * SV_SR), samplerate=SV_SR,
+                       channels=1, dtype="float32")
+        sd.wait()
+        return audio.flatten()
+
+    audio = await loop.run_in_executor(None, _record)
+    msg   = verifier.enroll(audio, SV_SR)
+
+    await manager.send({"type": "orb_state", "state": "idle"})
+    await manager.send({"type": "response_chunk", "content": msg, "stream": False})
+    await manager.send({"type": "response_done", "state": "idle"})
+
+
+async def _stt_start(use_vad: bool) -> None:
+    """Avvia registrazione Whisper (hold-to-talk o VAD)."""
+    if use_vad:
+        loop = asyncio.get_event_loop()
+        def _on_vad(text: str):
+            asyncio.run_coroutine_threadsafe(_on_stt_result(text), loop)
+        stt.start_vad(_on_vad)
+    else:
+        stt.start()
+
+
+async def _stt_stop() -> None:
+    """Stop manuale (hold-to-talk) → trascrive e risponde."""
+    loop = asyncio.get_event_loop()
+    await manager.send({"type": "orb_state", "state": "thinking"})
+    text = await loop.run_in_executor(None, stt.stop_and_transcribe)
+    await _on_stt_result(text)
+
+
+async def _on_stt_result(text: str) -> None:
+    """Risultato STT condiviso tra hold-to-talk e VAD."""
+    if text:
+        await manager.send({"type": "stt_result", "text": text})
+        await _respond(text)
+    else:
+        await manager.send({"type": "orb_state", "state": "idle"})
 
 
 async def _respond(user_input: str):
@@ -175,6 +239,10 @@ async def _respond(user_input: str):
         if skill.name == "self_modify":
             await _handle_self_modify(user_input)
             return
+        # Computer control: messaggio intermedio visibile prima dell'attesa VLM
+        if skill.name == "computer_control" and params.get("action") in ("click", "double_click"):
+            await manager.send({"type": "response_chunk",
+                                "content": "Guardo lo schermo...", "stream": True})
         try:
             skill_context = await skill.run(user_input, params)
             log.info(f"skill '{skill.name}' completata: {skill_context[:80]}")

@@ -54,8 +54,9 @@ async def extract_and_save(user_msg: str, assistant_msg: str) -> None:
         for f in fatti:
             key   = str(f.get("key",   "")).strip()
             value = str(f.get("value", "")).strip()
+            tags  = f.get("tags", None)
             if key and value:
-                memory_store.upsert_fact(key, value)
+                memory_store.upsert_fact(key, value, tags=tags)
                 log.info(f"memoria: '{key}' = '{value}'")
 
     except Exception as e:

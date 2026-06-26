@@ -13,3 +13,7 @@ pandas>=2.0.0
 openpyxl>=3.1.0
 python-docx>=1.1.0
 # openai-whisper  # opzionale: ~150MB, installa manualmente se serve audio
+
+# FASE 8C — opzionali (installa manualmente se usi queste skill)
+# pip install playwright && playwright install chromium   → browser_control
+# pip install pyautogui                                  → computer_control

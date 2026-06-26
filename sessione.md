@@ -5,22 +5,33 @@
 L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria/skills).
 
 ## Lavoro corrente
-**FASE 1–7 ✅ completate. FASE 8A ✅ completata. FASE 8B in corso — 3/5 tool completati.**
+**FASE 1–10 ✅ completate. Sessione orb: CyberEyeView riscritto come sfera plasma elettrica JARVIS-style + speaker verification per voce Roby.**
 
-### FASE 8A — Tool Expansion batch 1 (completata)
-- `safari_control`: naviga in Safari via osascript — "vai su X", "apri URL", "ricarica pagina"
-- `weather`: meteo real-time via wttr.in — temperatura, condizione, umidità, vento, previsione domani
-- `reminder`: crea promemoria in Reminders.app — "ricordami di X"
-- `mac_settings`: volume (alza/abbassa/imposta/muta), dark/light mode, sleep, blocca schermo
-- `desktop_control`: Dock (nascondi/mostra), Finder, svuota cestino, sfondo desktop
+### FASE 8B + 8C ✅ (completate sessione 26-06-2026 mattina)
+- `flight_finder`: cerca voli, deep link Google Flights + Skyscanner, 40+ città IATA, parser date italiano
+- `game_updater`: Steam Store API + Steam News API (no key), apri gioco via `steam://rungameid/`, BM25-like search
+- `code_runner`: esegue Python/shell in sandbox subprocess, 30s timeout, blocca comandi pericolosi
+- `browser_control`: Playwright headed Chromium, azioni navigate/search/fill/click/extract
+- `computer_control`: UI-TARS pattern — screencapture → VLM coords → PyAutoGUI click/type
+- **21 skill totali attive** (ordinate per priorità in `__init__.py`)
 
-### Bug fix sessione 15-06-2026 sera
-- **Loop vocale risolto**: wake manager ora si riavvia solo dopo `tts_done` (event-driven via WebSocket), non in `onFinalResult` — eliminato il loop mic→TTS→mic
-- **"ferma" / "ari ferma"** aggiunti ai comandi stop rapidi
-- **Ari diceva "non posso"**: aggiunta sezione CAPACITÀ in `constitution/ari.md` con tutti i 13 tool attivi
-- **Self-modify regex espansa**: catch di più trigger naturali (aggiungiti, costruisciti, programmati, ecc.)
-- **ClapWakeManager**: doppio battito di mani come wake trigger (stile Iron Man), toggle in Impostazioni → Voce
-- **TTS smart**: rimuove blocchi di codice prima di parlare, dice "Il codice è nel pannello"
+### FASE 9 ✅ UI Evolution (completata sessione 26-06-2026 mattina)
+- `CyberEyeView` riscritto: 12 layer (sclera, particleRing 4 armoniche, circuitSegments, irisMicro 48 fibre, irisRays 72, pupil, waveform radiale, specular Purkinje, eyelidArcs)
+- Orb panel solido (no trasparenza), cornerRadius layer, dimensione 224×224
+- `liveAmp = max(stateAmp, cpuLoad * 1.80)` — onde workload-driven
+- Badge stato (IDLE/LISTENING/THINKING/SPEAKING) posizionato nella metà inferiore dell'iride
+
+### FASE 10 ✅ STT Upgrade (completata sessione 26-06-2026 mattina)
+- `stt.py` riscritto: mlx-whisper large-v3-turbo, sounddevice InputStream, VAD silence detection thread
+- `VoiceManager.swift` semplificato: solo WebSocket signal, zero AVAudioEngine/SFSpeechRecognizer
+- `ws_handler.py`: `_stt_start` (hold/VAD) + `_stt_stop` + `_on_stt_result` — Python gestisce LLM direttamente
+
+### Memoria v2 ✅ (completata sessione 26-06-2026 sera)
+- `memory_store.py` riscritto: BM25 puro (zero dipendenze), tokenizer underscore-aware, RRF fusion 3 query
+- Schema esteso: colonne `tags`, `confidence`, `source`, `created_at`; tabella `relations` (Supersedes/Contradicts/RelatesTo); migrazione automatica su DB esistente
+- Auto-tagging: classifica chiavi in "identità", "professione", "tecnologia", "famiglia", ecc.
+- Relazione `Supersedes` automatica quando un fatto cambia valore
+- `MemoryPanel.swift` riscritto: panel 820×640, due colonne (fatti 62% | episodi 38%), search live, confidence bar, tag verdi, relazioni viola, footer timestamp
 
 ## Fasi completate
 
@@ -39,9 +50,9 @@ L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria
 
 ## Prossime priorità
 
-1. **FASE 8B** — ✅ file_processor, ✅ youtube, ✅ send_message | da fare: flight_finder, game_updater
-2. **FASE 8C** — browser_control (Playwright), computer_control VLM-driven (ispirazione UI-TARS), code_runner sandbox
-3. **FASE 9** — UI Evolution: audio waveform nell'orb, state label, grid dot background
+1. **Enrollment voce** — eseguire `cd ari && .venv/bin/python -m brain.speaker_verifier` per registrare il profilo di Roby (prerequisito per il filtro voce)
+2. **Aggiungere skill "registra la mia voce"** — trigger vocale/testuale che avvia enrollment da dentro Ari (UX più naturale del CLI)
+3. **Test end-to-end orb live** — lanciare l'app e verificare che la sfera sia visibile senza rettangolo, lightning bolts attivi, stati tutti funzionanti
 
 ---
 
@@ -128,7 +139,7 @@ Cinque repo analizzati come riferimento permanente (salvati in memory):
 Nessuno.
 
 ## Ultimo aggiornamento
-26-06-2026 - 00:30
+26-06-2026 - 23:32
 
 ## Changelog
 - 14-06-2026 15:23: Sessione progettazione completa — IdeasProject/ creato (16 doc, 34 decisioni), stack MLX confermato, nome AI = Ari, due modalità UI (notch + chat), roadmap 10 fasi definita
@@ -140,3 +151,5 @@ Nessuno.
 - 15-06-2026 23:19: FASE 8A ✅ (safari_control, weather, reminder, mac_settings, desktop_control — 13 tool totali attivi). Bug fix loop vocale (tts_done event-driven). "ferma" aggiunto stop. Constitution aggiornata con sezione CAPACITÀ. Self-modify regex espansa. Analisi UI Mark-XL (palette ciano+arancio, HUD waveform → ispirazione FASE 9).
 - 25-06-2026 11:30: Analisi 5 repo di riferimento permanente (Open Notebook, claude-code-best, JCode, Supervision, UI-TARS Desktop). Pattern integrati nella roadmap: computer_control VLM-driven (FASE 8C), file_processor con content-core (8B), screen awareness strutturata Supervision (FASE 6 upgrade), Memoria v2 DiGraph+BM25 (post 8), skill learning evolutivo (post 8).
 - 26-06-2026 00:30: FASE 8B avviata — 3 tool completati: file_processor (PDF/CSV/DOCX/immagini/audio), youtube (search+info+transcript), send_message (Messages.app osascript). 16 skill totali attive. Prossima sessione: flight_finder + game_updater → FASE 8B completa.
+- 26-06-2026 22:18: FASE 8B ✅ (flight_finder, game_updater) + FASE 8C ✅ (code_runner, browser_control, computer_control) + FASE 9 ✅ (CyberEyeView 12 layer, orb solido workload-driven) + FASE 10 ✅ (STT mlx-whisper VAD) + Memoria v2 ✅ (BM25+RRF+relations+tags, MemoryPanel 820×640 due colonne). 21 skill attive. Roadmap FASE 1–10 completata.
+- 26-06-2026 23:32: Sessione orb JARVIS — CyberEyeView riscritto 3× (HUD anelli → plasma swirls → sfera elettrica con lightning). Versione finale: lightning bolts zigzag+ramificazioni (plusLighter), 28 surface sparks con spike, swirl plasma morbidi, nucleo bianco. Orb panel reso trasparente (nessun rettangolo visibile). Speaker verification: brain/speaker_verifier.py MFCC 120-dim cosine>0.82, integrato in stt.py pre-Whisper, enrollment via WebSocket voice_enroll.

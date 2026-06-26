@@ -130,19 +130,22 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         panel.orderOut(nil)
     }
 
-    // MARK: - Orb (trasparente, no chrome)
+    // MARK: - Orb (solido, no chrome)
 
     private func buildOrbPanel() {
-        let w: CGFloat = 220
-        let h: CGFloat = 210
+        let w: CGFloat = 224
+        let h: CGFloat = 224
 
         let p = makePanel(w: w, h: h, resizable: false, chrome: false)
         p.isMovableByWindowBackground = true
+        p.backgroundColor = .clear
+        p.isOpaque        = false
+        p.hasShadow       = false   // ombra rettangolare rimossa
 
         let hosting = NSHostingController(rootView: OrbView())
         hosting.view.frame = NSRect(x: 0, y: 0, width: w, height: h)
-        hosting.view.wantsLayer = true
-        hosting.view.layer?.backgroundColor = NSColor.clear.cgColor
+        hosting.view.wantsLayer           = true
+        hosting.view.layer?.backgroundColor = CGColor.clear  // nessun quadrato
         p.contentView = hosting.view
 
         place(p, corner: .topLeft, offset: NSPoint(x: 40, y: 40))
@@ -348,21 +351,20 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         let vm = VoiceManager.shared
         vm.requestPermissions()
 
-        vm.onPartialResult = { [weak self] text in
-            self?.inputField?.stringValue = text
-        }
-        vm.onFinalResult = { [weak self] text in
-            guard let self else { return }
-            self.inputField?.stringValue = text
-            self.resetMicButton()
-            self.sendMessage()
-        }
         vm.onError = { [weak self] _ in
             self?.resetMicButton()
-            // Errore STT: riavvia wake subito (nessun TTS in corso)
             let s = SettingsManager.shared.settings
             if s.wakeWordEnabled { WakeWordManager.shared.start() }
             if s.clapWakeEnabled { ClapWakeManager.shared.start() }
+        }
+
+        // Risultato STT da Python (Whisper) — mostra testo e invia ad Ari
+        wm.onSTTResult = { [weak self] text in
+            guard let self, !text.isEmpty else { return }
+            self.inputField?.stringValue = text
+            self.resetMicButton()
+            // Python chiama già _respond internamente — non serve sendMessage()
+            // Mostriamo solo il testo nell'input field per feedback visivo
         }
 
         // TTS done → riavvia wake DOPO che Ari ha finito di parlare (evita il loop)
@@ -403,7 +405,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
             ClapWakeManager.shared.stop()
             self.micButton?.contentTintColor = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
             self.micButton?.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Registra")
-            WebSocketManager.shared.sendVoiceStart()
+            self.inputField?.placeholderString = "⏺ ascolto..."
             VoiceManager.shared.startRecording(useVAD: true)
         }
 
@@ -413,7 +415,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
             WakeWordManager.shared.stop()
             self.micButton?.contentTintColor = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
             self.micButton?.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Registra")
-            WebSocketManager.shared.sendVoiceStart()
+            self.inputField?.placeholderString = "⏺ ascolto..."
             VoiceManager.shared.startRecording(useVAD: true)
         }
     }
@@ -422,6 +424,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         micButton?.contentTintColor = NSColor.white.withAlphaComponent(0.4)
         micButton?.image = NSImage(systemSymbolName: "mic.circle.fill",
                                    accessibilityDescription: "Voce")
+        inputField?.placeholderString = "Scrivi ad Ari..."
     }
 
     private func setResponse(_ text: String) {
@@ -436,11 +439,12 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     // MARK: - Voce (hold-to-talk)
 
     private func voicePressed() {
-        WakeWordManager.shared.stop()   // libera l'audio engine prima di VoiceManager
+        WakeWordManager.shared.stop()
         micButton?.contentTintColor = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0)
         micButton?.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Registra")
-        WebSocketManager.shared.sendVoiceStart()
-        VoiceManager.shared.startRecording()
+        inputField?.stringValue = ""
+        inputField?.placeholderString = "⏺ ascolto..."
+        VoiceManager.shared.startRecording(useVAD: false)
     }
 
     private func voiceReleased() {
