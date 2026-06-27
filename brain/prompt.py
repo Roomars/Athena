@@ -6,7 +6,7 @@ from .memory_store import memory_store
 _CONST_DIR = Path(__file__).parent.parent / "constitution"
 
 
-def build_system_prompt() -> str:
+def build_system_prompt(query: str = "") -> str:
     def _read(name: str) -> str:
         p = _CONST_DIR / name
         return p.read_text(encoding="utf-8") if p.exists() else ""
@@ -25,14 +25,20 @@ def build_system_prompt() -> str:
 
 Data e ora corrente: {now}""".strip()
 
-    # ── Memoria persistente ──────────────────────────────────────────────────
     sections: list[str] = []
 
-    facts = memory_store.get_facts()
-    if facts:
-        lines = "\n".join(f"- {k}: {v}" for k, v in facts.items())
-        sections.append(f"## Quello che ricordo dell'utente\n{lines}")
-    # nota: retrieve_context() viene chiamato in ws_handler per query-specific injection
+    # Retrieval contestuale: top-5 fatti rilevanti per la query corrente.
+    # Se non c'è query (es. system prompt statico), carica tutti i fatti.
+    if query:
+        facts = memory_store.retrieve_context(query, top_k=5)
+        if facts:
+            lines = "\n".join(f"- {r['key']}: {r['value']}" for r in facts)
+            sections.append(f"## Quello che ricordo dell'utente (rilevante)\n{lines}")
+    else:
+        flat = memory_store.get_facts()
+        if flat:
+            lines = "\n".join(f"- {k}: {v}" for k, v in flat.items())
+            sections.append(f"## Quello che ricordo dell'utente\n{lines}")
 
     episodes = memory_store.get_recent_episodes(3)
     if episodes:

@@ -17,6 +17,7 @@ final class MemoryPanel {
     private var allFacts:    [[String: Any]] = []
     private var allRelations:[[String: Any]] = []
     private var allEpisodes: [[String: Any]] = []
+    private var allGraph:    [String: Any]   = [:]
 
     // MARK: - Show / toggle
 
@@ -216,11 +217,12 @@ final class MemoryPanel {
     @objc func refresh() {
         renderFacts(filter: searchField?.stringValue ?? "")
         renderEpisodes()
-        WebSocketManager.shared.onMemoryDump = { [weak self] facts, relations, episodes in
+        WebSocketManager.shared.onMemoryDump = { [weak self] facts, relations, episodes, graph in
             guard let self else { return }
             self.allFacts     = facts
             self.allRelations = relations
             self.allEpisodes  = episodes
+            self.allGraph     = graph
             DispatchQueue.main.async {
                 self.renderFacts(filter: self.searchField?.stringValue ?? "")
                 self.renderEpisodes()
@@ -241,62 +243,53 @@ final class MemoryPanel {
     private func renderFacts(filter: String) {
         guard let tv = factsView else { return }
 
-        let filtered = filter.isEmpty ? allFacts : allFacts.filter { fact in
+        let q = filter.lowercased()
+        let matchesFact: ([String: Any]) -> Bool = { fact in
+            guard !q.isEmpty else { return true }
             let key = (fact["key"]   as? String ?? "").lowercased()
             let val = (fact["value"] as? String ?? "").lowercased()
-            let tag = (fact["tags"]  as? String ?? "").lowercased()
-            let q   = filter.lowercased()
-            return key.contains(q) || val.contains(q) || tag.contains(q)
+            let tg  = (fact["tags"]  as? String ?? "").lowercased()
+            return key.contains(q) || val.contains(q) || tg.contains(q)
+        }
+
+        // Separa fatti normali da gap (confidence=0 o chiave _gap_)
+        let normalFacts = allFacts.filter {
+            let key  = $0["key"] as? String ?? ""
+            let conf = $0["confidence"] as? Double ?? 1.0
+            return !key.hasPrefix("_gap_") && conf > 0 && matchesFact($0)
+        }
+        let gapFacts = allFacts.filter {
+            let key  = $0["key"] as? String ?? ""
+            let conf = $0["confidence"] as? Double ?? 1.0
+            return (key.hasPrefix("_gap_") || conf == 0) && matchesFact($0)
         }
 
         let attr = NSMutableAttributedString()
+        let df   = DateFormatter(); df.dateFormat = "dd/MM HH:mm"
+        let rels = buildRelIndex()
 
-        // Intestazione colonna
-        attr.append(header("FATTI  (\(filtered.count))", color: cyan))
+        // ── Fatti normali ────────────────────────────────────────────────────
+        let countLabel = filter.isEmpty ? "\(normalFacts.count)" : "\(normalFacts.count)/\(allFacts.count - gapFacts.count)"
+        attr.append(header("FATTI  (\(countLabel))", color: cyan))
         attr.append(sep())
 
-        if filtered.isEmpty {
+        if normalFacts.isEmpty {
             attr.append(dim(filter.isEmpty ? "  nessun fatto memorizzato\n" : "  nessun risultato per '\(filter)'\n"))
         } else {
-            let df = DateFormatter(); df.dateFormat = "dd/MM HH:mm"
-            let rels = buildRelIndex()
+            for fact in normalFacts {
+                attr.append(renderFactRow(fact, df: df, rels: rels))
+            }
+        }
 
-            for fact in filtered {
-                let key    = fact["key"]        as? String ?? ""
-                let value  = fact["value"]      as? String ?? ""
-                let conf   = fact["confidence"] as? Double ?? 1.0
-                let tagsRaw = fact["tags"]      as? String ?? "[]"
-                let ts     = fact["updated_at"] as? Double ?? 0
-                let tags   = parseTags(tagsRaw)
-                let date   = ts > 0 ? df.string(from: Date(timeIntervalSince1970: ts)) : ""
-
-                // Key
-                attr.append(bright("  \(key)", color: cyan))
-                attr.append(dim("  \(date)\n"))
-
-                // Value
-                attr.append(body("  \(value)\n"))
-
-                // Confidence bar
-                if conf < 1.0 {
-                    let bars = Int(conf * 10)
-                    let bar  = String(repeating: "▪", count: bars) +
-                               String(repeating: "·", count: 10 - bars)
-                    attr.append(dim("  conf [\(bar)] \(Int(conf*100))%\n"))
-                }
-
-                // Tags
-                if !tags.isEmpty {
-                    attr.append(tag("  " + tags.map { "#\($0)" }.joined(separator: " ") + "\n"))
-                }
-
-                // Relazioni uscenti da questo fatto
-                if let outgoing = rels[key] {
-                    for (rtype, target) in outgoing {
-                        attr.append(rel("  → \(rtype): \(target)\n"))
-                    }
-                }
-
+        // ── Gap ──────────────────────────────────────────────────────────────
+        if !gapFacts.isEmpty {
+            attr.append(NSAttributedString(string: "\n"))
+            attr.append(header("GAP  (\(gapFacts.count))  — da scoprire", color: orange))
+            attr.append(sep())
+            for gap in gapFacts {
+                let rawKey = gap["key"] as? String ?? ""
+                let key    = rawKey.hasPrefix("_gap_") ? String(rawKey.dropFirst(5)) : rawKey
+                attr.append(bright("  ? \(key)\n", color: orange))
                 attr.append(dim(String(repeating: "·", count: 44) + "\n"))
             }
         }
@@ -304,6 +297,39 @@ final class MemoryPanel {
         DispatchQueue.main.async {
             tv.textStorage?.setAttributedString(attr)
         }
+    }
+
+    private func renderFactRow(_ fact: [String: Any], df: DateFormatter,
+                               rels: [String: [(String, String)]]) -> NSAttributedString {
+        let attr   = NSMutableAttributedString()
+        let key    = fact["key"]        as? String ?? ""
+        let value  = fact["value"]      as? String ?? ""
+        let conf   = fact["confidence"] as? Double ?? 1.0
+        let tagsRaw = fact["tags"]      as? String ?? "[]"
+        let ts     = fact["updated_at"] as? Double ?? 0
+        let tags   = parseTags(tagsRaw)
+        let date   = ts > 0 ? df.string(from: Date(timeIntervalSince1970: ts)) : ""
+
+        attr.append(bright("  \(key)", color: cyan))
+        attr.append(dim("  \(date)\n"))
+        attr.append(body("  \(value)\n"))
+
+        if conf < 1.0 {
+            let bars = Int(conf * 10)
+            let bar  = String(repeating: "▪", count: bars) +
+                       String(repeating: "·", count: 10 - bars)
+            attr.append(dim("  conf [\(bar)] \(Int(conf * 100))%\n"))
+        }
+        if !tags.isEmpty {
+            attr.append(tag("  " + tags.map { "#\($0)" }.joined(separator: " ") + "\n"))
+        }
+        if let outgoing = rels[key] {
+            for (rtype, target) in outgoing {
+                attr.append(relStyled(rtype: rtype, target: target))
+            }
+        }
+        attr.append(dim(String(repeating: "·", count: 44) + "\n"))
+        return attr
     }
 
     // MARK: - Render episodi
@@ -340,18 +366,23 @@ final class MemoryPanel {
     // MARK: - Stats
 
     private func updateStats() {
-        let nFacts = allFacts.count
-        let nRels  = allRelations.count
-        let nEps   = allEpisodes.count
-        statsLabel?.stringValue = "\(nFacts) fatti  ·  \(nRels) relazioni  ·  \(nEps) episodi"
+        let nFacts  = allFacts.filter { !($0["key"] as? String ?? "").hasPrefix("_gap_") }.count
+        let nGap    = allFacts.count - nFacts
+        let nRels   = allRelations.count
+        let nEps    = allEpisodes.count
+        let nNodes  = (allGraph["nodes"] as? [String])?.count ?? 0
+        let nEdges  = (allGraph["edges"] as? [[String: Any]])?.count ?? 0
 
-        // Footer
-        let ts = DateFormatter()
-        ts.dateFormat = "HH:mm:ss"
+        var parts = ["\(nFacts) fatti", "\(nRels) rel", "\(nEps) ep"]
+        if nGap  > 0 { parts.append("\(nGap) gap") }
+        if nNodes > 0 { parts.append("grafo \(nNodes)N·\(nEdges)E") }
+        statsLabel?.stringValue = parts.joined(separator: "  ·  ")
+
+        let ts = DateFormatter(); ts.dateFormat = "HH:mm:ss"
         let timeStr = ts.string(from: Date())
         if let footer = panel?.contentView?.subviews.first(where: { $0.frame.height == 28 }),
            let lbl = footer.viewWithTag(99) as? NSTextField {
-            lbl.stringValue = "sync \(timeStr)  ·  memoria v2 BM25 + relazioni"
+            lbl.stringValue = "sync \(timeStr)  ·  memoria v2 · DiGraph · hybrid BM25+TF-IDF"
         }
     }
 
@@ -398,10 +429,18 @@ final class MemoryPanel {
             .foregroundColor: green.withAlphaComponent(0.70),
         ])
     }
-    private func rel(_ text: String) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [
+    private func relStyled(rtype: String, target: String) -> NSAttributedString {
+        let color: NSColor
+        let symbol: String
+        switch rtype {
+        case "Contradicts":  color = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 0.85); symbol = "✕"
+        case "Supersedes":   color = NSColor.white.withAlphaComponent(0.30);                   symbol = "↑"
+        case "DerivedFrom":  color = green.withAlphaComponent(0.70);                           symbol = "⟵"
+        default:             color = purple.withAlphaComponent(0.70);                          symbol = "→" // RelatesTo
+        }
+        return NSAttributedString(string: "  \(symbol) \(rtype): \(target)\n", attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
-            .foregroundColor: purple.withAlphaComponent(0.70),
+            .foregroundColor: color,
         ])
     }
 

@@ -5,7 +5,7 @@
 L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria/skills).
 
 ## Lavoro corrente
-**FASE 1–10 ✅ completate. Sessione orb: CyberEyeView riscritto come sfera plasma elettrica JARVIS-style + speaker verification per voce Roby.**
+**FASE 1–10 ✅ completate. Sessione 27-06-2026: auto-conoscenza Ari + Memoria v2 completa + orb WebGL stella supergigante + FASE 6 upgrade YOLO/supervision.**
 
 ### FASE 8B + 8C ✅ (completate sessione 26-06-2026 mattina)
 - `flight_finder`: cerca voli, deep link Google Flights + Skyscanner, 40+ città IATA, parser date italiano
@@ -51,8 +51,8 @@ L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria
 ## Prossime priorità
 
 1. **Enrollment voce** — eseguire `cd ari && .venv/bin/python -m brain.speaker_verifier` per registrare il profilo di Roby (prerequisito per il filtro voce)
-2. **Aggiungere skill "registra la mia voce"** — trigger vocale/testuale che avvia enrollment da dentro Ari (UX più naturale del CLI)
-3. **Test end-to-end orb live** — lanciare l'app e verificare che la sfera sia visibile senza rettangolo, lightning bolts attivi, stati tutti funzionanti
+2. **mlx-embeddings + nomic-embed-text** — dense retrieval reale per completare Memoria v2 (BM25+dense già preparato in memory_store.py, manca il modello)
+3. **Test end-to-end orb WebGL** — verificare che WKWebView mostri la stella supergigante correttamente nell'app compilata (Three.js CDN richiede internet al primo avvio)
 
 ---
 
@@ -139,7 +139,7 @@ Cinque repo analizzati come riferimento permanente (salvati in memory):
 Nessuno.
 
 ## Ultimo aggiornamento
-26-06-2026 - 23:32
+27-06-2026 - 09:28
 
 ## Changelog
 - 14-06-2026 15:23: Sessione progettazione completa — IdeasProject/ creato (16 doc, 34 decisioni), stack MLX confermato, nome AI = Ari, due modalità UI (notch + chat), roadmap 10 fasi definita
@@ -153,3 +153,4 @@ Nessuno.
 - 26-06-2026 00:30: FASE 8B avviata — 3 tool completati: file_processor (PDF/CSV/DOCX/immagini/audio), youtube (search+info+transcript), send_message (Messages.app osascript). 16 skill totali attive. Prossima sessione: flight_finder + game_updater → FASE 8B completa.
 - 26-06-2026 22:18: FASE 8B ✅ (flight_finder, game_updater) + FASE 8C ✅ (code_runner, browser_control, computer_control) + FASE 9 ✅ (CyberEyeView 12 layer, orb solido workload-driven) + FASE 10 ✅ (STT mlx-whisper VAD) + Memoria v2 ✅ (BM25+RRF+relations+tags, MemoryPanel 820×640 due colonne). 21 skill attive. Roadmap FASE 1–10 completata.
 - 26-06-2026 23:32: Sessione orb JARVIS — CyberEyeView riscritto 3× (HUD anelli → plasma swirls → sfera elettrica con lightning). Versione finale: lightning bolts zigzag+ramificazioni (plusLighter), 28 surface sparks con spike, swirl plasma morbidi, nucleo bianco. Orb panel reso trasparente (nessun rettangolo visibile). Speaker verification: brain/speaker_verifier.py MFCC 120-dim cosine>0.82, integrato in stt.py pre-Whisper, enrollment via WebSocket voice_enroll.
+- 27-06-2026: Sessione auto-conoscenza — Memoria v2 upgraded (DiGraph networkx, BM25+TF-IDF+RRF 5-query, contradiction detection, gap detection, confidence decay, LLM episode summary). MemoryPanel v2 Swift (gap section, color-coded relations). FASE 6 upgrade (YOLO+supervision structured screen analysis). Orb WebGL → stella supergigante azzurra Three.js/GLSL + fake bloom + orbital particles GPU-side → implementato in Swift via WKWebView. constitution/ari.md riscritto con self-knowledge completo (21 tool, architettura Swift+Python, procedura self-modify, limitazioni). constitution/local_ai_ecosystem.md creato (analisi awesome-local-ai: upgrade prioritizzati per retrieval semantico, TTS, modelli).

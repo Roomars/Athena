@@ -142,6 +142,7 @@ async def handle_ws(ws: WebSocket):
                     "facts":     memory_store.get_facts_full(),
                     "relations": memory_store.get_relations(),
                     "episodes":  memory_store.get_episodes_full(n=200),
+                    "graph":     memory_store.graph_snapshot(),
                 })
 
             elif msg_type == "voice_enroll":
@@ -249,7 +250,7 @@ async def _respond(user_input: str):
         except Exception as e:
             log.error(f"skill '{skill.name}' errore: {e}")
 
-    system = build_system_prompt()
+    system = build_system_prompt(query=user_input)
     if skill_context:
         system += f"\n\n### Dati da tool interno (NON citare questa sezione nella risposta)\n{skill_context}\nRispondi in modo naturale usando questi dati, senza ripetere prefissi tecnici come [SKILL ...] o simili."
 
@@ -292,15 +293,18 @@ async def _respond(user_input: str):
 
 
 async def _respond_vision(image_b64: str, prompt: str):
-    """Analizza uno screenshot con Gemma 4 12B e risponde in chat."""
+    """Analizza uno screenshot: YOLO detection + Gemma strutturata."""
     await manager.send({"type": "orb_state", "state": "thinking"})
 
-    result = await vision.analyze(image_b64, prompt)
+    structured = await vision.analyze_structured(image_b64, prompt)
+    result     = vision.structured_to_text(structured)
 
     working_memory.add("user",      f"[screenshot] {prompt}")
     working_memory.add("assistant", result)
 
+    # Invia sia il testo che il JSON strutturato al frontend
     await manager.send({"type": "response_chunk", "content": result, "stream": False})
+    await manager.send({"type": "vision_structured", "data": structured})
     await manager.send({"type": "response_done", "state": "idle"})
 
     if result.strip():

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ari Orb</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+canvas{display:block}
+#ui{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:9}
+.btn{padding:7px 16px;border:1px solid rgba(255,255,255,0.18);border-radius:20px;
+  color:rgba(255,255,255,0.7);font:600 10px/1 monospace;letter-spacing:1.5px;
+  cursor:pointer;background:rgba(0,0,0,0.3);backdrop-filter:blur(6px);
+  text-transform:uppercase;transition:all .2s}
+.btn:hover{background:rgba(255,255,255,0.12);color:#fff}
+.btn.on{border-color:rgba(255,255,255,0.55);color:#fff;background:rgba(255,255,255,0.08)}
+#lbl{position:fixed;top:16px;left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,0.3);font:600 10px/1 monospace;letter-spacing:4px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="lbl">IDLE</div>
+<div id="ui">
+  <button class="btn on" onclick="go('IDLE',this)">Idle</button>
+  <button class="btn"    onclick="go('THINKING',this)">Thinking</button>
+  <button class="btn"    onclick="go('SPEAKING',this)">Speaking</button>
+  <button class="btn"    onclick="go('ERROR',this)">Error</button>
+</div>
+
+<!-- PLASMA VERTEX -->
+<script id="vplas" type="x-shader/x-vertex">
+uniform float uTime;uniform float uTurb;
+varying vec3 vPos;varying vec3 vNorm;
+vec4 p4(vec4 x){return mod(((x*34.)+1.)*x,289.);}
+float sn(vec3 v){
+  const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
+  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.-g;
+  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+2.*C.xxx;vec3 x3=x0-1.+3.*C.xxx;
+  i=mod(i,289.);
+  vec4 p=p4(p4(p4(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+  float n_=1./7.;vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.*floor(p*ns.z*ns.z);
+  vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.*x_);
+  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.+1.;vec4 s1=floor(b1)*2.+1.;vec4 sh=-step(h,vec4(0.));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
+  vec4 nm=inversesqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
+  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);
+  m=m*m;return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+void main(){
+  vPos=position;vNorm=normal;
+  vec3 p=position;
+  // granulazione stellare: piccole bolle convettive sulla superficie
+  float gran=sn(p*5.+uTime*.25)*.03+sn(p*12.+uTime*.5)*.015+sn(p*24.+uTime*.8)*.007;
+  float d=gran*uTurb;
+  p+=normal*d;
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
+}
+</script>
+
+<!-- PLASMA FRAGMENT -->
+<script id="fplas" type="x-shader/x-fragment">
+uniform float uTime;uniform float uSpeed;uniform float uTurb;
+uniform float uErr;uniform float uThink;uniform float uSpeak;
+varying vec3 vPos;varying vec3 vNorm;
+vec4 p4(vec4 x){return mod(((x*34.)+1.)*x,289.);}
+float sn(vec3 v){
+  const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
+  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.-g;
+  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+2.*C.xxx;vec3 x3=x0-1.+3.*C.xxx;
+  i=mod(i,289.);
+  vec4 p=p4(p4(p4(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+  float n_=1./7.;vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.*floor(p*ns.z*ns.z);
+  vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.*x_);
+  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.+1.;vec4 s1=floor(b1)*2.+1.;vec4 sh=-step(h,vec4(0.));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
+  vec4 nm=inversesqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
+  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);
+  m=m*m;return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+float fbm(vec3 p,float s){
+  float v=0.,a=.5;
+  v+=a*sn(p+uTime*s);p=p*2.13+vec3(.7,.3,.5);a*=.5;
+  v+=a*sn(p+uTime*s*.7);p=p*2.13+vec3(.2,.8,.1);a*=.5;
+  v+=a*sn(p+uTime*s*.5);p=p*2.13+vec3(.5,.1,.9);a*=.5;
+  v+=a*sn(p+uTime*s*.3);return v;
+}
+void main(){
+  float spd=uSpeed;
+  vec3 p=vPos*2.2;
+  float dist=length(vPos); // 0=centro, ~1=bordo sfera
+
+  // ── SUPERFICIE STELLARE ── granulazione convettiva
+  // celle di convezione grandi (granuli)
+  float gran1=(sn(vPos*5.0+uTime*spd*.4)+1.)*.5;
+  float gran2=(sn(vPos*10.0+uTime*spd*.7+vec3(3.,1.,2.))+1.)*.5;
+  float gran3=(sn(vPos*20.0+uTime*spd*1.1+vec3(1.,4.,3.))+1.)*.5;
+  float granulation=gran1*.55+gran2*.3+gran3*.15;
+
+  // macchie magnetiche scure (sunspot-like)
+  float spots=pow(abs(sn(vPos*3.5+uTime*spd*.15)),3.)*0.35;
+
+  // fotosferal base: bianco-azzurro intenso
+  // Colori stella O/B: >30000K → bianco con dominanza azzurra
+  vec3 cHot  =vec3(.92,.97,1.0);   // bianco-azzurro caldo
+  vec3 cWarm =vec3(.65,.82,1.0);   // azzurro chiaro
+  vec3 cCool =vec3(.30,.55,1.0);   // azzurro medio (zone più "fredde")
+  vec3 cSpot =vec3(.05,.10,.45);   // macchie scure magnetiche
+
+  // error: stella che muore → rossa/arancio
+  cHot =mix(cHot, vec3(1.,.85,.6),uErr*.8);
+  cWarm=mix(cWarm,vec3(1.,.5,.1), uErr*.9);
+  cCool=mix(cCool,vec3(.8,.2,.0), uErr);
+
+  vec3 starCol=mix(cCool,cWarm,granulation);
+  starCol=mix(starCol,cHot,gran1*gran1); // picchi più caldi
+  starCol=mix(starCol,cSpot,spots);       // macchie
+
+  // ── LIMB DARKENING — bordi più scuri (effetto fisicamente corretto)
+  vec3 N=normalize(vNorm);
+  vec3 V=vec3(0.,0.,1.);
+  float cosT=max(dot(N,V),0.);
+  // legge di Eddington: I(mu)=I0*(0.4+0.6*mu)
+  float limb=0.4+0.6*cosT;
+  starCol*=limb;
+
+  // ── CROMOSFERA — alone azzurro brillante al bordo
+  float chromo=pow(1.-cosT,2.5)*3.5;
+  vec3 chromoCol=mix(vec3(.3,.6,1.),vec3(1.,.3,0.),uErr);
+  starCol+=chromoCol*chromo;
+
+  // ── CORONA — raggiera che si espande verso l'esterno
+  // simulate con multiple freq di noise radiali
+  float coronaRay=abs(sn(vec3(vPos.xy*3.,uTime*spd*.2)))*1.5;
+  coronaRay*=pow(1.-cosT,1.2)*2.0;
+  starCol+=mix(vec3(.2,.5,1.),vec3(1.,.4,0.),uErr)*coronaRay;
+
+  // ── PROTUBERANZE (prominences) — filamenti che escono dalla superficie
+  vec3 pq=vec3(fbm(p,spd*.6),fbm(p+vec3(5.2,1.3,2.8),spd*.4),fbm(p+vec3(1.7,9.2,3.4),spd*.3));
+  float prom=pow(abs(sin(fbm(p+3.*pq,spd*.2)*3.14159*4.)),6.);
+  vec3 promCol=mix(vec3(.5,.8,1.),vec3(1.,.5,.0),uErr);
+  starCol+=promCol*prom*0.8*(1.-dist*.5);
+
+  // ── SPEAKING — pulsazioni stellari (oscillazioni radiali)
+  float pulse=uSpeak*sin(dist*10.-uTime*5.)*0.3;
+  starCol*=1.+pulse;
+
+  // ── INTENSITÀ GLOBALE
+  float brightness=2.5+uThink*1.2+uSpeak*.6;
+  starCol*=brightness;
+
+  // ── CORE BIANCO-AZZURRO CENTRALE — nucleo stellare
+  // -20%: decay 2.0→2.5 (raggio 20% più stretto), intensity 8.0→6.4
+  float core=exp(-dist*2.5)*6.4*(1.+uThink*.8+uSpeak*.5);
+  vec3 coreCol=mix(vec3(.85,.93,1.),vec3(1.,.6,.2),uErr);
+  starCol+=coreCol*core;
+
+  gl_FragColor=vec4(starCol,1.);
+}
+</script>
+
+<!-- GLASS -->
+<script id="vglass" type="x-shader/x-vertex">
+varying vec3 vN;varying vec3 vV;
+void main(){vN=normalize(normalMatrix*normal);vec4 mv=modelViewMatrix*vec4(position,1.);vV=normalize(-mv.xyz);gl_Position=projectionMatrix*mv;}
+</script>
+<script id="fglass" type="x-shader/x-fragment">
+varying vec3 vN;varying vec3 vV;uniform float uErr;
+void main(){
+  float f=pow(1.-max(dot(vN,vV),0.),3.5);
+  float inner=pow(1.-max(dot(vN,vV),0.),1.2)*.25;
+  vec3 rc=mix(vec3(.5,.25,1.),vec3(1.,.3,.0),uErr);
+  vec3 ic=mix(vec3(.2,.5,1.),vec3(1.,.5,.0),uErr);
+  gl_FragColor=vec4(rc*f+ic*inner,(f*.65+inner)*.9);
+}
+</script>
+
+<!-- ORBITAL PARTICLES VERTEX -->
+<script id="vpart" type="x-shader/x-vertex">
+attribute float aSpeed;
+attribute float aPhase;
+attribute float aRadius;
+attribute float aSz;
+attribute vec3  aOX;   // right vector nel piano orbitale
+attribute vec3  aOY;   // up vector nel piano orbitale
+uniform float uTime;
+uniform float uSpeak;
+uniform float uErr;
+varying float vAlpha;
+varying float vErr;
+void main(){
+  float angle=aPhase+uTime*aSpeed;
+  // speaking: espande leggermente il raggio
+  float r=aRadius*(1.+uSpeak*.08*sin(uTime*3.+aPhase));
+  vec3 pos=r*(cos(angle)*aOX+sin(angle)*aOY);
+  vec4 mv=modelViewMatrix*vec4(pos,1.);
+  // size aumenta con raggio (più grande verso l'esterno)
+  float szScale=(aRadius-.85)*3.5+.5;
+  gl_PointSize=aSz*szScale*(280./-mv.z)*(1.+uSpeak*.5);
+  gl_Position=projectionMatrix*mv;
+  // alpha: particelle interne più trasparenti
+  vAlpha=(.2+.5*(aRadius-.88)/.5)*(.5+.5*abs(sin(uTime*.8+aPhase)));
+  vErr=uErr;
+}
+</script>
+<script id="fpart" type="x-shader/x-fragment">
+varying float vAlpha;varying float vErr;
+void main(){
+  float d=length(gl_PointCoord-.5)*2.;
+  if(d>1.)discard;
+  float a=smoothstep(1.,0.,d)*vAlpha;
+  vec3 c=mix(vec3(.55,.75,1.),vec3(1.,.5,.1),vErr);
+  gl_FragColor=vec4(c,a*.8);
+}
+</script>
+
+<!-- PLASMA STREAM VERTEX (archi che orbitano) -->
+<script id="vstream" type="x-shader/x-vertex">
+attribute float aT;      // 0..1 posizione lungo l'arco
+attribute float aAlpha;  // alpha base del vertice
+varying float vA;
+varying float vT;
+void main(){
+  vA=aAlpha;vT=aT;
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);
+}
+</script>
+<script id="fstream" type="x-shader/x-fragment">
+varying float vA;varying float vT;
+uniform vec3 uColor;
+void main(){
+  // fade ai bordi dell'arco, massimo al centro
+  float t=vT;
+  float fade=smoothstep(0.,.25,t)*smoothstep(1.,.75,t);
+  gl_FragColor=vec4(uColor,vA*fade*1.2);
+}
+</script>
+
+<script>
+// ── renderer ──────────────────────────────────────────────────────
+const canvas=document.getElementById('c');
+const R=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+R.setClearColor(0x000000,0);
+R.setSize(innerWidth,innerHeight);
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,100);
+cam.position.z=3.4;
+
+// ── uniforms ──────────────────────────────────────────────────────
+const U={uTime:{value:0},uSpeed:{value:.3},uTurb:{value:.8},uErr:{value:0},uThink:{value:0},uSpeak:{value:0}};
+
+// ── plasma sphere ─────────────────────────────────────────────────
+const plasMesh=new THREE.Mesh(
+  new THREE.SphereGeometry(.84,128,128),
+  new THREE.ShaderMaterial({vertexShader:document.getElementById('vplas').textContent,fragmentShader:document.getElementById('fplas').textContent,uniforms:U})
+);
+scene.add(plasMesh);
+
+// ── glass ─────────────────────────────────────────────────────────
+[THREE.FrontSide,THREE.BackSide].forEach(side=>{
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(.895,64,64),
+    new THREE.ShaderMaterial({vertexShader:document.getElementById('vglass').textContent,fragmentShader:document.getElementById('fglass').textContent,uniforms:{uErr:U.uErr},transparent:true,depthWrite:false,side,blending:THREE.AdditiveBlending})
+  ));
+});
+
+// ── glow shells ───────────────────────────────────────────────────
+// glow shells — azzurro stellare O/B
+[[1.04,0x99bbff,.10],[1.16,0x5588ff,.06],[1.35,0x2255cc,.035],[1.62,0x1133aa,.018]].forEach(([r,c,o])=>{
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(r,32,32),
+    new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,side:THREE.BackSide,depthWrite:false,blending:THREE.AdditiveBlending})));
+});
+
+// ── orbital particles — GPU-side ──────────────────────────────────
+const NP=180;
+const bufR=new Float32Array(NP),bufSpd=new Float32Array(NP),
+      bufPh=new Float32Array(NP),bufSz=new Float32Array(NP),
+      bufOX=new Float32Array(NP*3),bufOY=new Float32Array(NP*3);
+
+for(let i=0;i<NP;i++){
+  // raggio: bias verso l'esterno (radice → densità aumenta verso fuori)
+  const t=Math.pow(Math.random(),.45); // 0→1 con più peso verso 1
+  bufR[i]=.90+t*.52;                   // 0.90 → 1.42
+  bufSpd[i]=(.25+Math.random()*.35)*(Math.random()<.5?1:-1); // alterna direzione
+  bufPh[i]=Math.random()*Math.PI*2;
+  bufSz[i]=.8+Math.random()*1.8;
+
+  // piano orbitale random
+  const ax=new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).normalize();
+  const ref=Math.abs(ax.y)<.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0);
+  const ox=new THREE.Vector3().crossVectors(ax,ref).normalize();
+  const oy=new THREE.Vector3().crossVectors(ox,ax).normalize();
+  bufOX[i*3]=ox.x;bufOX[i*3+1]=ox.y;bufOX[i*3+2]=ox.z;
+  bufOY[i*3]=oy.x;bufOY[i*3+1]=oy.y;bufOY[i*3+2]=oy.z;
+}
+const partGeo=new THREE.BufferGeometry();
+// posizione iniziale (verrà calcolata nel VS)
+partGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NP*3),3));
+partGeo.setAttribute('aRadius', new THREE.BufferAttribute(bufR,1));
+partGeo.setAttribute('aSpeed',  new THREE.BufferAttribute(bufSpd,1));
+partGeo.setAttribute('aPhase',  new THREE.BufferAttribute(bufPh,1));
+partGeo.setAttribute('aSz',     new THREE.BufferAttribute(bufSz,1));
+partGeo.setAttribute('aOX',     new THREE.BufferAttribute(bufOX,3));
+partGeo.setAttribute('aOY',     new THREE.BufferAttribute(bufOY,3));
+const partMat=new THREE.ShaderMaterial({
+  vertexShader:document.getElementById('vpart').textContent,
+  fragmentShader:document.getElementById('fpart').textContent,
+  uniforms:{uTime:U.uTime,uSpeak:U.uSpeak,uErr:U.uErr},
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+});
+scene.add(new THREE.Points(partGeo,partMat));
+
+// ── plasma streams — archi che orbitano ───────────────────────────
+const STREAM_COLORS=[0x8844ff,0xff22cc,0x22aaff,0xaa44ff,0xff66aa,0x44ddff];
+const streams=[];
+const ARC_PTS=50;
+
+function buildStreamGeo(){
+  const pos=new Float32Array(ARC_PTS*3);
+  const aT=new Float32Array(ARC_PTS);
+  const aAlpha=new Float32Array(ARC_PTS);
+  for(let i=0;i<ARC_PTS;i++){
+    aT[i]=i/(ARC_PTS-1);
+    aAlpha[i]=.7;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('aT',new THREE.BufferAttribute(aT,1));
+  geo.setAttribute('aAlpha',new THREE.BufferAttribute(aAlpha,1));
+  return geo;
+}
+
+STREAM_COLORS.forEach((hex,i)=>{
+  const c=new THREE.Color(hex);
+  // asse orbitale e piano
+  const axis=new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).normalize();
+  const ref=Math.abs(axis.y)<.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0);
+  const ox=new THREE.Vector3().crossVectors(axis,ref).normalize();
+  const oy=new THREE.Vector3().crossVectors(ox,axis).normalize();
+  const r=.92+Math.random()*.12;          // raggio orbitale (appena fuori sfera)
+  const arcSpan=.8+Math.random()*.9;       // ampiezza arco in radianti
+  const speed=.12+Math.random()*.18;
+  const phase=Math.random()*Math.PI*2;
+  const geo=buildStreamGeo();
+  const mat=new THREE.ShaderMaterial({
+    vertexShader:document.getElementById('vstream').textContent,
+    fragmentShader:document.getElementById('fstream').textContent,
+    uniforms:{uColor:{value:new THREE.Vector3(c.r,c.g,c.b)}},
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+  });
+  const line=new THREE.Line(geo,mat);
+  scene.add(line);
+  streams.push({geo,ox,oy,r,arcSpan,speed,phase});
+});
+
+function updateStreams(t){
+  streams.forEach(s=>{
+    const pos=s.geo.attributes.position.array;
+    const angle0=s.phase+t*s.speed;
+    for(let i=0;i<ARC_PTS;i++){
+      const frac=i/(ARC_PTS-1);
+      const a=angle0+s.arcSpan*(frac-.5);
+      const x=s.r*(Math.cos(a)*s.ox.x+Math.sin(a)*s.oy.x);
+      const y=s.r*(Math.cos(a)*s.ox.y+Math.sin(a)*s.oy.y);
+      const z=s.r*(Math.cos(a)*s.ox.z+Math.sin(a)*s.oy.z);
+      pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=z;
+    }
+    s.geo.attributes.position.needsUpdate=true;
+  });
+}
+
+// ── state machine ─────────────────────────────────────────────────
+const STATES={
+  IDLE:    {speed:.28,turb:.75,err:0,think:0,speak:0,scale:1.0},
+  THINKING:{speed:1.5, turb:2.5,err:0,think:1,speak:0,scale:1.03},
+  SPEAKING:{speed:.85, turb:1.4,err:0,think:0,speak:1,scale:1.07},
+  ERROR:   {speed:3.8, turb:5.5,err:1,think:0,speak:0,scale:1.0},
+};
+let tgt={...STATES.IDLE},cur={...STATES.IDLE};
+let spkPh=0;
+const lp=(a,b,t)=>a+(b-a)*t;
+
+window.go=(name,btn)=>{
+  tgt={...STATES[name]};
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('lbl').textContent=name;
+};
+
+// ── animation ─────────────────────────────────────────────────────
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta(),el=clock.getElapsedTime();
+  const lf=1-Math.exp(-dt*2.2);
+  cur.speed=lp(cur.speed,tgt.speed,lf);cur.turb=lp(cur.turb,tgt.turb,lf);
+  cur.err=lp(cur.err,tgt.err,lf);cur.think=lp(cur.think,tgt.think,lf);
+  cur.speak=lp(cur.speak,tgt.speak,lf);cur.scale=lp(cur.scale,tgt.scale,lf);
+  spkPh+=dt*7;
+  U.uTime.value=el;U.uSpeed.value=cur.speed+(cur.speak*.5*Math.abs(Math.sin(spkPh)));
+  U.uTurb.value=cur.turb;U.uErr.value=cur.err;U.uThink.value=cur.think;U.uSpeak.value=cur.speak;
+  const sc=cur.scale+(cur.speak>.01?Math.sin(spkPh*1.4)*.025*cur.speak:0);
+  plasMesh.scale.setScalar(sc);
+  plasMesh.rotation.y=el*.055;plasMesh.rotation.x=Math.sin(el*.09)*.08;
+  if(cur.err>.05){plasMesh.position.x=(Math.random()-.5)*.02*cur.err;plasMesh.position.y=(Math.random()-.5)*.02*cur.err;}
+  else{plasMesh.position.x=0;plasMesh.position.y=0;}
+  updateStreams(el);
+  R.render(scene,cam);
+}
+animate();
+window.addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();R.setSize(innerWidth,innerHeight);});
+</script>
+</body>
+</html>

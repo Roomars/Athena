@@ -27,7 +27,8 @@ final class WebSocketManager: ObservableObject {
     /// facts = array di {key,value,tags,confidence,updated_at}
     /// relations = array di {from_key,to_key,rel_type}
     /// episodes = array di {summary,timestamp,message_count}
-    var onMemoryDump: (([[String: Any]], [[String: Any]], [[String: Any]]) -> Void)?
+    /// graph    = {nodes:[String], edges:[{from,to,rel}]}
+    var onMemoryDump: (([[String: Any]], [[String: Any]], [[String: Any]], [String: Any]) -> Void)?
     var onStatsUpdate:           (([String: Any]) -> Void)?
     var onCaptureScreen:         ((String) -> Void)?
     var onDiffProposal:          ((String) -> Void)?
@@ -147,7 +148,8 @@ final class WebSocketManager: ObservableObject {
                 let facts     = msg["facts"]     as? [[String: Any]] ?? []
                 let relations = msg["relations"] as? [[String: Any]] ?? []
                 let episodes  = msg["episodes"]  as? [[String: Any]] ?? []
-                self.onMemoryDump?(facts, relations, episodes)
+                let graph     = msg["graph"]     as? [String: Any]   ?? [:]
+                self.onMemoryDump?(facts, relations, episodes, graph)
 
             case "stats_update":
                 self.cpuLoad = (msg["cpu_pct"] as? Double ?? 0) / 100.0

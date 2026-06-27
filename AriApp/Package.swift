@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "AriApp",
             path: "Sources/AriApp",
-            resources: []
+            resources: [.copy("orb.html")]
         ),
     ]
 )
