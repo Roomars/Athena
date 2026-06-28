@@ -133,19 +133,22 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     // MARK: - Orb (solido, no chrome)
 
     private func buildOrbPanel() {
-        let w: CGFloat = 224
-        let h: CGFloat = 224
+        let w: CGFloat = 260
+        let h: CGFloat = 260
 
-        let p = makePanel(w: w, h: h, resizable: false, chrome: false)
+        let p = makePanel(w: w, h: h, resizable: true, chrome: false)
         p.isMovableByWindowBackground = true
         p.backgroundColor = .clear
         p.isOpaque        = false
-        p.hasShadow       = false   // ombra rettangolare rimossa
+        p.hasShadow       = false
+        p.minSize         = NSSize(width: 120, height: 120)
+        p.delegate        = self
 
         let hosting = NSHostingController(rootView: OrbView())
-        hosting.view.frame = NSRect(x: 0, y: 0, width: w, height: h)
-        hosting.view.wantsLayer           = true
-        hosting.view.layer?.backgroundColor = CGColor.clear  // nessun quadrato
+        hosting.view.frame            = NSRect(x: 0, y: 0, width: w, height: h)
+        hosting.view.autoresizingMask = [.width, .height]
+        hosting.view.wantsLayer       = true
+        hosting.view.layer?.backgroundColor = CGColor.clear
         p.contentView = hosting.view
 
         place(p, corner: .topLeft, offset: NSPoint(x: 40, y: 40))
@@ -280,6 +283,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
             if resizable { mask.insert(.resizable) }
         } else {
             mask.insert(.borderless)
+            if resizable { mask.insert(.resizable) }
         }
 
         let p = AriPanel(

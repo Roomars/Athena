@@ -2,35 +2,37 @@ import SwiftUI
 
 struct OrbView: View {
     var body: some View {
-        let wm  = WebSocketManager.shared
+        let wm = WebSocketManager.shared
         let lbl = stateLabel(wm: wm)
 
-        ZStack {
-            Color.clear
-            // Sfera WebGL — stella supergigante azzurra
-            WebOrbView(state: wm.orbState, size: 224)
-                .frame(width: 224, height: 224)
+        GeometryReader { geo in
+            let sz = min(geo.size.width, geo.size.height)
+            ZStack {
+                Color.clear
+                CyberEyeView(state: wm.orbState, workload: wm.cpuLoad, size: sz)
+                    .frame(width: sz, height: sz)
 
-            // Badge stato
-            if !lbl.isEmpty {
-                Text(lbl.uppercased())
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(badgeColor(wm.orbState).opacity(0.90))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.black.opacity(0.55))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .strokeBorder(badgeColor(wm.orbState).opacity(0.40), lineWidth: 0.5)
-                            )
-                    )
-                    .shadow(color: badgeColor(wm.orbState).opacity(0.6), radius: 4)
-                    .offset(y: 66)
+                if !lbl.isEmpty {
+                    Text(lbl.uppercased())
+                        .font(.system(size: max(7, sz * 0.04), weight: .bold, design: .monospaced))
+                        .foregroundColor(badgeColor(wm.orbState).opacity(0.90))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.black.opacity(0.55))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .strokeBorder(badgeColor(wm.orbState).opacity(0.40), lineWidth: 0.5)
+                                )
+                        )
+                        .shadow(color: badgeColor(wm.orbState).opacity(0.6), radius: 4)
+                        .offset(y: sz * 0.29)
+                }
             }
+            .frame(width: sz, height: sz)
+            .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
-        .frame(width: 224, height: 224)
     }
 
     private func stateLabel(wm: WebSocketManager) -> String {

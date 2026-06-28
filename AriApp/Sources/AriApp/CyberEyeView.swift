@@ -15,7 +15,7 @@ struct CyberEyeView: View {
                 let t  = tl.date.timeIntervalSinceReferenceDate
                 let cx = sz.width / 2
                 let cy = sz.height / 2
-                let r  = min(cx, cy) * 0.86
+                let r  = min(cx, cy) * 0.54
                 drawAll(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
             }
         }
@@ -56,7 +56,6 @@ struct CyberEyeView: View {
     // MARK: - Dispatcher
 
     private func drawAll(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat, r: CGFloat, t: Double) {
-        drawBackground(ctx: ctx, cx: cx, cy: cy, r: r)
         drawOuterHaze(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
 
         let sphereRect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
@@ -70,7 +69,7 @@ struct CyberEyeView: View {
             if state == .thinking  { drawScanArm(ctx: inner, cx: cx, cy: cy, r: r, t: t) }
         }
 
-        drawSurfaceSparks(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
+        drawGravitationalWaves(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
         drawRim(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
         drawHotCenter(ctx: ctx, cx: cx, cy: cy, r: r, t: t)
     }
@@ -108,9 +107,9 @@ struct CyberEyeView: View {
             .init(color: Color.white.opacity(0.90),                                    location: 0.00),
             .init(color: Color(red: 0.75, green: 0.95, blue: 1.00).opacity(0.85),      location: 0.08),
             .init(color: col.opacity(0.78 * bri),                                      location: 0.30),
-            .init(color: col.opacity(0.55 * bri),                                      location: 0.58),
-            .init(color: Color(red: 0.03, green: 0.06, blue: 0.18).opacity(0.85),      location: 0.83),
-            .init(color: Color(red: 0.01, green: 0.02, blue: 0.08).opacity(1.00),      location: 1.00),
+            .init(color: col.opacity(0.45 * bri),                                      location: 0.58),
+            .init(color: col.opacity(0.15 * bri),                                      location: 0.83),
+            .init(color: Color.clear,                                                  location: 1.00),
         ])
         ctx.fill(Path(ellipseIn: rect),
                  with: .radialGradient(g, center: CGPoint(x: cx, y: cy),
@@ -293,36 +292,63 @@ struct CyberEyeView: View {
                  with: .color(.white.opacity(0.95)))
     }
 
-    // MARK: - Surface sparks (particelle sul bordo della sfera)
+    // MARK: - Gravitational waves — stile Siri (linee sottili continue)
 
-    private func drawSurfaceSparks(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat,
-                                    r: CGFloat, t: Double) {
-        let count = 28
-        for i in 0..<count {
-            let θ     = Double(i) / Double(count) * .pi * 2 + t * rotSpeed * 0.08
-            let pulse = abs(sin(t * (3.5 + Double(i % 5) * 0.6) + Double(i) * 0.44))
-            guard pulse > 0.25 else { continue }
-            let radVar = CGFloat(1.0 + 0.06 * sin(t * 4.1 + Double(i) * 0.8))
-            let rr     = r * radVar
-            let x      = cx + rr * CGFloat(cos(θ))
-            let y      = cy + rr * CGFloat(sin(θ))
-            let pr     = CGFloat(1.2 + pulse * 3.0)
-            // Particella
-            ctx.fill(Path(ellipseIn: CGRect(x: x-pr, y: y-pr, width: pr*2, height: pr*2)),
-                     with: .color(col.opacity(0.60 + 0.40 * pulse)))
-            // Glow intorno alla particella
-            let gr = pr * 3.5
-            ctx.fill(Path(ellipseIn: CGRect(x: x-gr, y: y-gr, width: gr*2, height: gr*2)),
-                     with: .color(col.opacity(0.12 * pulse)))
-            // Spike radiale (scintilla)
-            if pulse > 0.65 {
-                let sLen = r * 0.06 * CGFloat(pulse)
-                var sp   = Path()
-                sp.move(to: CGPoint(x: x, y: y))
-                sp.addLine(to: CGPoint(x: cx + (rr + sLen) * CGFloat(cos(θ)),
-                                        y: cy + (rr + sLen) * CGFloat(sin(θ))))
-                ctx.stroke(sp, with: .color(col.opacity(0.70 * pulse)),
-                           style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
+    private func drawGravitationalWaves(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat,
+                                         r: CGFloat, t: Double) {
+        let u = r / 60.0   // unità di scala
+        let amp: CGFloat
+        switch state {
+        case .idle:      amp = 0.40
+        case .listening: amp = 0.65
+        case .thinking:  amp = 0.90
+        case .speaking:  amp = 1.20
+        }
+
+        let N    = 300     // punti per curva — abbastanza per sembrare smooth
+        let base = t * rotSpeed
+        let pulse = CGFloat(0.80 + 0.20 * sin(t * 1.7))   // respiro globale
+
+        // (raggio base, freq onda1, freq onda2, speed, colore, spessore core, opacità)
+        let waves: [(baseR: CGFloat, f1: Double, f2: Double, speed: Double,
+                     color: Color, lw: CGFloat, alpha: CGFloat)] = [
+            (r * 1.10, 3, 6, 0.60, col,                       1.6, 0.55),
+            (r * 1.20, 4, 8, 1.00, col,                       2.0, 0.75),
+            (r * 1.30, 5, 3, 1.40, Color.white.opacity(0.85), 1.0, 0.50),
+            (r * 1.42, 3, 7, 1.80, col.opacity(0.70),         0.7, 0.35),
+        ]
+
+        ctx.drawLayer { layer in
+            layer.blendMode = .plusLighter
+
+            for wave in waves {
+                let tS = base * wave.speed
+
+                // costruisce il path in un passaggio
+                var path = Path()
+                for i in 0...N {
+                    let θ = Double(i) / Double(N) * 2 * .pi
+                    let dr = amp * (
+                        10.0 * u * CGFloat(sin(wave.f1 * θ + tS)) +
+                         4.0 * u * CGFloat(sin(wave.f2 * θ - tS * 0.75 + 1.3))
+                    )
+                    let rr = wave.baseR + dr
+                    let pt = CGPoint(x: cx + rr * CGFloat(cos(θ)),
+                                     y: cy + rr * CGFloat(sin(θ)))
+                    i == 0 ? path.move(to: pt) : path.addLine(to: pt)
+                }
+                path.closeSubpath()
+
+                let a = wave.alpha * pulse
+                // 1. glow esterno — morbido, largo
+                layer.stroke(path, with: .color(wave.color.opacity(Double(a * 0.18))),
+                             style: StrokeStyle(lineWidth: wave.lw * 6, lineCap: .round))
+                // 2. alone intermedio
+                layer.stroke(path, with: .color(wave.color.opacity(Double(a * 0.35))),
+                             style: StrokeStyle(lineWidth: wave.lw * 2.5, lineCap: .round))
+                // 3. core sottile e brillante
+                layer.stroke(path, with: .color(wave.color.opacity(Double(a))),
+                             style: StrokeStyle(lineWidth: wave.lw, lineCap: .round))
             }
         }
     }
