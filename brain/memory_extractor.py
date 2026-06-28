@@ -100,8 +100,7 @@ async def _check_contradiction(key: str, old_value: str, new_value: str) -> None
             {"role": "user",   "content": prompt},
         ], max_tokens=5)
         if answer.lower().startswith("s"):
-            memory_store.add_relation(key, key, "Contradicts")
-            log.info(f"contraddizione rilevata per '{key}': '{old_value}' vs '{new_value}'")
+            log.warning(f"contraddizione rilevata per '{key}': '{old_value}' vs '{new_value}' — valore aggiornato")
     except Exception as e:
         log.debug(f"_check_contradiction ignorato: {e}")
 

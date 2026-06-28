@@ -7,17 +7,17 @@ from typing import Any
 
 log = logging.getLogger("tts")
 
-VOICE   = "Federica (Premium)"
-RATE    = 185
-ENABLED = True
+VOICE = "Federica (Premium)"
+RATE  = 185
 
 
 class TTSEngine:
     def __init__(self):
         self._proc: subprocess.Popen | None = None
-        self._lock  = threading.Lock()
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._lock    = threading.Lock()
+        self._loop:   asyncio.AbstractEventLoop | None = None
         self._on_done: Callable[[], Coroutine[Any, Any, None]] | None = None
+        self._enabled = True
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Registra il loop asyncio principale per la notifica tts_done."""
@@ -28,7 +28,7 @@ class TTSEngine:
         self._on_done = cb
 
     def speak(self, text: str) -> None:
-        if not ENABLED or not text.strip():
+        if not self._enabled or not text.strip():
             return
         self.stop()
         def _run():
@@ -54,8 +54,7 @@ class TTSEngine:
                 self._proc = None
 
     def set_enabled(self, enabled: bool) -> None:
-        global ENABLED
-        ENABLED = enabled
+        self._enabled = enabled
         if not enabled:
             self.stop()
         log.info(f"TTS {'attivato' if enabled else 'disattivato'}")

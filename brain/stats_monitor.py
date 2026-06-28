@@ -119,7 +119,7 @@ async def stats_loop(send_fn) -> None:
 
     psutil.cpu_percent(interval=None)   # prima lettura: scarta il delta
     prev_net  = psutil.net_io_counters()
-    prev_disk = psutil.disk_io_counters()
+    prev_disk = psutil.disk_io_counters()   # può essere None su VM
     prev_ts   = time.monotonic()
     detector  = AnomalyDetector()
 
@@ -138,9 +138,12 @@ async def stats_loop(send_fn) -> None:
         mem_pct   = mem.percent
 
         disk_io    = psutil.disk_io_counters()
-        disk_read  = (disk_io.read_bytes  - prev_disk.read_bytes)  / dt
-        disk_write = (disk_io.write_bytes - prev_disk.write_bytes) / dt
-        prev_disk  = disk_io
+        if disk_io is not None and prev_disk is not None:
+            disk_read  = (disk_io.read_bytes  - prev_disk.read_bytes)  / dt
+            disk_write = (disk_io.write_bytes - prev_disk.write_bytes) / dt
+            prev_disk  = disk_io
+        else:
+            disk_read = disk_write = 0.0
 
         disk_used_pct = psutil.disk_usage("/").percent
 

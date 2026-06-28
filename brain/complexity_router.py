@@ -10,14 +10,14 @@ _RULES = [
     # triviale
     (r"^(ciao|ok|grazie|sì|no|bene|capito|perfetto)[\.\!]?$", "trivial"),
     (r"(che ore|che giorno|data di oggi)", "trivial"),
-    # semplice
-    (r"(apri|avvia|chiudi|metti|suona)", "simple"),
-    (r"^.{1,40}$", "simple"),
+    # molto complesso — prima dei pattern generic
+    (r"(analizza (tutti|questi|ogni)|trova (tutte|tutti))", "very_complex"),
     # complesso
     (r"(analizza|confronta|spiega nel dettaglio|pro e contro)", "complex"),
     (r"(architettura|progetta|implementa|refactor)", "complex"),
-    # molto complesso
-    (r"(analizza (tutti|questi|ogni)|trova (tutte|tutti))", "very_complex"),
+    # semplice — catch-all corto solo dopo i pattern semantici
+    (r"(apri|avvia|chiudi|metti|suona)", "simple"),
+    (r"^.{1,40}$", "simple"),
 ]
 
 TOKEN_BUDGET = {

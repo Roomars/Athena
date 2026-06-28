@@ -227,12 +227,7 @@ class MemoryStore:
             "SELECT key FROM facts WHERE key = ?", (key,)
         ).fetchone()
         if existing:
-            # Supersede relazione: vecchio valore → nuovo
-            old_val = self._db.execute(
-                "SELECT value FROM facts WHERE key = ?", (key,)
-            ).fetchone()["value"]
-            if old_val != value:
-                self._add_relation(key, key, "Supersedes")
+            pass  # aggiornamento tracciato da updated_at; nessun self-edge
         self._db.execute(
             """INSERT OR REPLACE INTO facts
                (key, value, updated_at, created_at, tags, confidence, source)

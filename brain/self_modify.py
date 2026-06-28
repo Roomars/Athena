@@ -114,8 +114,14 @@ def apply_brain_changes(changes: list[dict]) -> dict[str, str]:
     return apply_changes(scoped)
 
 
-def git_commit(message: str) -> str:
-    subprocess.run(["git", "add", "brain/"], cwd=REPO_ROOT, capture_output=True)
+def git_commit(message: str, changes: list[dict] | None = None) -> str:
+    scopes = {c["scope"] for c in changes} if changes else {"brain"}
+    paths  = []
+    if "brain"        in scopes: paths.append("brain/")
+    if "swift"        in scopes: paths.append("AriApp/")
+    if "constitution" in scopes: paths.append("constitution/")
+    for p in paths:
+        subprocess.run(["git", "add", p], cwd=REPO_ROOT, capture_output=True)
     result = subprocess.run(
         ["git", "commit", "-m", message],
         cwd=REPO_ROOT, capture_output=True, text=True,

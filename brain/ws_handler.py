@@ -37,7 +37,6 @@ class ConnectionManager:
             await self.send({"type": "model_ready", "model": engine.model_id})
         else:
             await self.send({"type": "model_loading"})
-            asyncio.create_task(self._wait_and_notify_ready())
 
     def disconnect(self):
         self.connection = None
@@ -49,12 +48,6 @@ class ConnectionManager:
                 await self.connection.send_text(json.dumps(payload))
             except Exception:
                 pass
-
-    async def _wait_and_notify_ready(self):
-        while not engine.is_ready:
-            await asyncio.sleep(0.5)
-        await self.send({"type": "model_ready", "model": engine.model_id})
-        log.info("notificato Swift: model_ready")
 
     @property
     def privacy_mode(self) -> bool:
@@ -384,7 +377,7 @@ async def _apply_pending():
         await manager.send({"type": "rebuild_app"})
     else:
         # Solo Python / constitution — commit e restart daemon
-        commit_out = self_modify.git_commit(f"self-modify: {mod['description']}")
+        commit_out = self_modify.git_commit(f"self-modify: {mod['description']}", mod["changes"])
         needs_restart = any(c["scope"] == "brain" for c in mod["changes"])
         msg = f"\n\nApplicato. {commit_out}"
         if needs_restart:

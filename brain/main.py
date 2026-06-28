@@ -10,8 +10,10 @@ from .settings import load as load_settings
 from .llm import engine, MODEL_PRIMARY
 from .ws_handler import handle_ws, manager
 from .tts import tts
+from .stt import stt
 from .proactive.monitor import monitor_loop
 from .stats_monitor import stats_loop
+from .memory_extractor import decay_confidence
 
 setup_logging()
 load_settings()
@@ -35,11 +37,22 @@ async def startup():
     engine.on_ready.append(on_model_ready)
     engine.load_async(MODEL_PRIMARY)
 
+    # Precarica Whisper in background — elimina il cold start alla prima trascrizione
+    stt.load_async()
+
     # Monitor proattivo — gira in background ogni 60s
     asyncio.create_task(monitor_loop(manager, tts))
 
     # Stats sistema — invia metriche ogni 2s via WebSocket
     asyncio.create_task(stats_loop(manager.send))
+
+    # Confidence decay — applica subito e poi ogni 24h
+    async def _decay_loop():
+        await asyncio.sleep(5)   # attende boot completo
+        while True:
+            await asyncio.get_event_loop().run_in_executor(None, decay_confidence)
+            await asyncio.sleep(86400)
+    asyncio.create_task(_decay_loop())
 
 
 @app.on_event("shutdown")
