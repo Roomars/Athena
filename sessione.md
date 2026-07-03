@@ -139,7 +139,7 @@ Cinque repo analizzati come riferimento permanente (salvati in memory):
 Nessuno.
 
 ## Ultimo aggiornamento
-27-06-2026 - 09:28
+03-07-2026 - sessione attiva
 
 ## Changelog
 - 14-06-2026 15:23: Sessione progettazione completa — IdeasProject/ creato (16 doc, 34 decisioni), stack MLX confermato, nome AI = Ari, due modalità UI (notch + chat), roadmap 10 fasi definita
@@ -154,3 +154,4 @@ Nessuno.
 - 26-06-2026 22:18: FASE 8B ✅ (flight_finder, game_updater) + FASE 8C ✅ (code_runner, browser_control, computer_control) + FASE 9 ✅ (CyberEyeView 12 layer, orb solido workload-driven) + FASE 10 ✅ (STT mlx-whisper VAD) + Memoria v2 ✅ (BM25+RRF+relations+tags, MemoryPanel 820×640 due colonne). 21 skill attive. Roadmap FASE 1–10 completata.
 - 26-06-2026 23:32: Sessione orb JARVIS — CyberEyeView riscritto 3× (HUD anelli → plasma swirls → sfera elettrica con lightning). Versione finale: lightning bolts zigzag+ramificazioni (plusLighter), 28 surface sparks con spike, swirl plasma morbidi, nucleo bianco. Orb panel reso trasparente (nessun rettangolo visibile). Speaker verification: brain/speaker_verifier.py MFCC 120-dim cosine>0.82, integrato in stt.py pre-Whisper, enrollment via WebSocket voice_enroll.
 - 27-06-2026: Sessione auto-conoscenza — Memoria v2 upgraded (DiGraph networkx, BM25+TF-IDF+RRF 5-query, contradiction detection, gap detection, confidence decay, LLM episode summary). MemoryPanel v2 Swift (gap section, color-coded relations). FASE 6 upgrade (YOLO+supervision structured screen analysis). Orb WebGL → stella supergigante azzurra Three.js/GLSL + fake bloom + orbital particles GPU-side → implementato in Swift via WKWebView. constitution/ari.md riscritto con self-knowledge completo (21 tool, architettura Swift+Python, procedura self-modify, limitazioni). constitution/local_ai_ecosystem.md creato (analisi awesome-local-ai: upgrade prioritizzati per retrieval semantico, TTS, modelli).
+- 03-07-2026: Bugfix critici (TTS deadlock lock/proc.wait separati, SAVE_TO strippato prima di TTS, @app.on_event → lifespan asynccontextmanager). Migrazione modello primario Qwen3-14B → Gemma 4 31B-it via mlx-vlm (testo+vision in un modello, -7GB RAM). CyberEyeView: lerp RGB per transizioni fluide tra stati (0.55s), LISTENING state con radar rings (3 anelli pulsanti), event pulse visivo per memory_save/contradiction (verde/rosso). Verifica FASE 8B: flight_finder (IATA 40+, Skyscanner URLs) e game_updater (Steam API reale, news formattate) confermati funzionanti.
