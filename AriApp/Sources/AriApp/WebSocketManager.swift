@@ -9,6 +9,10 @@ enum ModelState {
     case loading, ready(String)
 }
 
+enum OrbEvent {
+    case memorySave, contradiction, entityUpdate
+}
+
 final class WebSocketManager: ObservableObject {
     static let shared = WebSocketManager()
 
@@ -17,7 +21,13 @@ final class WebSocketManager: ObservableObject {
     @Published var lastResponse: String = ""
     @Published var isConnected = false
     @Published var modelState: ModelState = .loading
-    @Published var cpuLoad: Double = 0.0   // 0.0–1.0, aggiornato da stats_update
+    @Published var cpuLoad: Double = 0.0
+
+    @Published var activeEvent: OrbEvent? = nil
+    private(set) var prevOrbState: OrbState = .idle
+    private(set) var stateChangedAt: Date = .now
+    private(set) var eventStartedAt: Date? = nil
+    private var eventTimer: Timer?
 
     // Callback AppKit puro
     var onTextChunk:             ((String) -> Void)?
@@ -111,7 +121,12 @@ final class WebSocketManager: ObservableObject {
         DispatchQueue.main.async {
             switch type {
             case "orb_state":
-                self.orbState = OrbState(rawValue: msg["state"] as? String ?? "idle") ?? .idle
+                let newState = OrbState(rawValue: msg["state"] as? String ?? "idle") ?? .idle
+                if newState != self.orbState {
+                    self.prevOrbState   = self.orbState
+                    self.stateChangedAt = Date()
+                }
+                self.orbState = newState
 
             case "response_chunk":
                 let token = msg["content"] as? String ?? ""
@@ -169,6 +184,20 @@ final class WebSocketManager: ObservableObject {
 
             case "modification_applied":
                 break
+
+            case "orb_event":
+                let ev = msg["event"] as? String ?? ""
+                switch ev {
+                case "memory_save":   self.activeEvent = .memorySave
+                case "contradiction": self.activeEvent = .contradiction
+                case "entity_update": self.activeEvent = .entityUpdate
+                default: break
+                }
+                self.eventStartedAt = Date()
+                self.eventTimer?.invalidate()
+                self.eventTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+                    DispatchQueue.main.async { self?.activeEvent = nil }
+                }
 
             case "tts_done":
                 self.onTTSDone?()

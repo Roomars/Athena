@@ -276,9 +276,12 @@ async def _respond(user_input: str):
     if full_response.strip():
         tts.speak(_tts_text(full_response))
 
-    # Memoria: estrae fatti in background senza bloccare
+    # Memoria: estrae fatti in background e notifica l'orb
     if full_response.strip():
-        asyncio.create_task(extract_and_save(user_input, full_response.strip()))
+        async def _extract_and_notify(u: str, r: str) -> None:
+            await extract_and_save(u, r)
+            await manager.send({"type": "orb_event", "event": "memory_save"})
+        asyncio.create_task(_extract_and_notify(user_input, full_response.strip()))
 
     # File write: se la risposta contiene SAVE_TO:/path, salva il file
     if "SAVE_TO:" in full_response:

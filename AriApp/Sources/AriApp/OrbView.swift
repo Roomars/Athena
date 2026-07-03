@@ -9,7 +9,15 @@ struct OrbView: View {
             let sz = min(geo.size.width, geo.size.height)
             ZStack {
                 Color.clear
-                CyberEyeView(state: wm.orbState, workload: wm.cpuLoad, size: sz)
+                CyberEyeView(
+                    state:          wm.orbState,
+                    prevState:      wm.prevOrbState,
+                    transitionStart: wm.stateChangedAt,
+                    workload:       wm.cpuLoad,
+                    size:           sz,
+                    activeEvent:    wm.activeEvent,
+                    eventStart:     wm.eventStartedAt
+                )
                     .frame(width: sz, height: sz)
 
                 if !lbl.isEmpty {
