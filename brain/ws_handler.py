@@ -456,8 +456,11 @@ async def _send_error(msg: str):
 def _tts_text(response: str) -> str:
     """Prepara la risposta per il TTS: rimuove codice e markdown, tronca a 400 char."""
     import re
+    # Direttiva SAVE_TO — non va letta ad alta voce
+    text = re.sub(r'\nSAVE_TO:[^\n]+', '', response)
+    text = re.sub(r'^SAVE_TO:[^\n]+\n?', '', text, flags=re.MULTILINE)
     # Blocchi multi-linea ```...```
-    text = re.sub(r'```[\s\S]*?```', ' Il codice è nel pannello. ', response)
+    text = re.sub(r'```[\s\S]*?```', ' Il codice è nel pannello. ', text)
     # Inline code `...`
     text = re.sub(r'`[^`\n]+`', '', text)
     # Header markdown

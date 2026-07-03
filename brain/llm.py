@@ -5,20 +5,21 @@ from typing import AsyncGenerator
 
 log = logging.getLogger("llm")
 
-# Modelli MLX disponibili (in ordine di preferenza)
-MODEL_PRIMARY = "mlx-community/Qwen3-14B-4bit"
-MODEL_FAST    = "mlx-community/Qwen3-4B-4bit"
-MODEL_HEAVY   = "mlx-community/Qwen2.5-32B-4bit"
+# Gemma 4 31B — testo + vision in un unico modello (mlx-vlm)
+MODEL_PRIMARY = "mlx-community/gemma-4-31b-it-4bit"
+MODEL_FAST    = "mlx-community/gemma-4-12b-it-4bit"   # già scaricato (vecchio vision)
+MODEL_HEAVY   = "mlx-community/gemma-4-31b-it-4bit"
 
 
 class LLMEngine:
     def __init__(self):
-        self._model = None
-        self._tokenizer = None
+        self._model     = None
+        self._processor = None
+        self._config    = None
         self._model_id: str | None = None
         self._loading = False
-        self._lock = threading.Lock()
-        self.on_ready: list = []  # callbacks
+        self._lock    = threading.Lock()
+        self.on_ready: list = []
 
     # ------------------------------------------------------------------
     # Caricamento
@@ -32,17 +33,21 @@ class LLMEngine:
                 log.info(f"caricamento: {model_id}")
                 try:
                     import os
-                    from mlx_lm import load
-                    # Usa cache locale — evita network check HuggingFace ad ogni avvio
+                    from mlx_vlm import load
+                    from mlx_vlm.utils import load_config
                     os.environ.setdefault("HF_HUB_OFFLINE", "1")
                     try:
-                        self._model, self._tokenizer = load(model_id)
+                        model, processor = load(model_id)
+                        config = load_config(model_id)
                     except Exception:
-                        # Modello non in cache — scarica dalla rete
                         os.environ.pop("HF_HUB_OFFLINE", None)
-                        self._model, self._tokenizer = load(model_id)
-                    self._model_id = model_id
-                    self._loading = False  # is_ready = True PRIMA dei callback
+                        model, processor = load(model_id)
+                        config = load_config(model_id)
+                    self._model     = model
+                    self._processor = processor
+                    self._config    = config
+                    self._model_id  = model_id
+                    self._loading   = False
                     log.info(f"modello pronto: {model_id}")
                     for cb in self.on_ready:
                         cb(model_id)
@@ -66,8 +71,21 @@ class LLMEngine:
     def model_id(self) -> str | None:
         return self._model_id
 
+    # Esposti a vision.py per condividere il modello caricato
+    @property
+    def model(self):
+        return self._model
+
+    @property
+    def processor(self):
+        return self._processor
+
+    @property
+    def config(self):
+        return self._config
+
     # ------------------------------------------------------------------
-    # Generazione streaming
+    # Generazione streaming (text-only)
     # ------------------------------------------------------------------
 
     async def stream(
@@ -78,8 +96,8 @@ class LLMEngine:
     ) -> AsyncGenerator[tuple[str, str], None]:
         """
         Async generator. Yields (kind, text):
-          ("thinking", "")   — Ari sta ragionando (non mostrare)
-          ("chunk", token)   — token visibile da streamare
+          ("thinking", "")   — Ari sta ragionando
+          ("chunk", token)   — token visibile
           ("done", "")       — generazione completata
         """
         if not self.is_ready:
@@ -92,19 +110,23 @@ class LLMEngine:
 
         def _generate():
             try:
-                from mlx_lm import stream_generate
+                from mlx_vlm import stream_generate
 
-                # Applica chat template
+                # Chat template — usa il tokenizer interno del processor
+                tokenizer = (
+                    self._processor.tokenizer
+                    if hasattr(self._processor, "tokenizer")
+                    else self._processor
+                )
                 try:
-                    prompt = self._tokenizer.apply_chat_template(
+                    prompt = tokenizer.apply_chat_template(
                         messages,
                         tokenize=False,
                         add_generation_prompt=True,
                         enable_thinking=thinking,
                     )
                 except TypeError:
-                    # Tokenizer non supporta enable_thinking
-                    prompt = self._tokenizer.apply_chat_template(
+                    prompt = tokenizer.apply_chat_template(
                         messages,
                         tokenize=False,
                         add_generation_prompt=True,
@@ -114,13 +136,15 @@ class LLMEngine:
                 think_buf = ""
 
                 for resp in stream_generate(
-                    self._model, self._tokenizer,
+                    self._model,
+                    self._processor,
                     prompt=prompt,
+                    image=None,
                     max_tokens=max_tokens,
+                    enable_thinking=thinking,
                 ):
                     token = resp.text
 
-                    # Filtra blocchi <think>...</think>
                     if not in_think and "<think>" in token:
                         in_think = True
 
@@ -150,6 +174,29 @@ class LLMEngine:
             yield item
             if item[0] == "done":
                 break
+
+    # ------------------------------------------------------------------
+    # Generazione con immagine (usato da vision.py)
+    # ------------------------------------------------------------------
+
+    def generate_vision(self, image_pil, prompt: str, max_tokens: int = 1024) -> str:
+        """Genera testo da immagine PIL + prompt. Sincrono — chiamare in executor."""
+        if not self.is_ready:
+            return "Modello non ancora pronto."
+        try:
+            from mlx_vlm import generate
+            from mlx_vlm import apply_chat_template
+
+            formatted = apply_chat_template(
+                self._processor, self._config, prompt, num_images=1
+            )
+            return generate(
+                self._model, self._processor, image_pil, formatted,
+                max_tokens=max_tokens, verbose=False,
+            ).strip()
+        except Exception as e:
+            log.error(f"errore generazione vision: {e}")
+            return f"Errore durante l'analisi: {e}"
 
 
 engine = LLMEngine()

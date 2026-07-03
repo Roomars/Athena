@@ -1,6 +1,7 @@
 import asyncio
 import atexit
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import JSONResponse
@@ -19,14 +20,12 @@ setup_logging()
 load_settings()
 
 log = logging.getLogger("main")
-app = FastAPI(title="Ari Brain", version="0.2.0")
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     log.info("Ari daemon avviato — porta 8765")
 
-    # Salva il loop del thread principale — usato dal callback nel thread MLX
     main_loop = asyncio.get_event_loop()
 
     def on_model_ready(model_id: str):
@@ -37,32 +36,29 @@ async def startup():
     engine.on_ready.append(on_model_ready)
     engine.load_async(MODEL_PRIMARY)
 
-    # Precarica Whisper in background — elimina il cold start alla prima trascrizione
     stt.load_async()
 
-    # Monitor proattivo — gira in background ogni 60s
     asyncio.create_task(monitor_loop(manager, tts))
-
-    # Stats sistema — invia metriche ogni 2s via WebSocket
     asyncio.create_task(stats_loop(manager.send))
 
-    # Confidence decay — applica subito e poi ogni 24h
     async def _decay_loop():
-        await asyncio.sleep(5)   # attende boot completo
+        await asyncio.sleep(5)
         while True:
             await asyncio.get_event_loop().run_in_executor(None, decay_confidence)
             await asyncio.sleep(86400)
     asyncio.create_task(_decay_loop())
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown():
     log.info("Ari daemon in shutdown")
 
 
 @atexit.register
 def _cleanup():
     log.info("cleanup atexit eseguito")
+
+
+app = FastAPI(title="Ari Brain", version="0.2.0", lifespan=lifespan)
 
 
 @app.get("/health")

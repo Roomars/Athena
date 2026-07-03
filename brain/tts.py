@@ -32,26 +32,31 @@ class TTSEngine:
             return
         self.stop()
         def _run():
-            with self._lock:
-                try:
-                    self._proc = subprocess.Popen(
+            proc = None
+            try:
+                with self._lock:
+                    proc = subprocess.Popen(
                         ["say", "-v", VOICE, "-r", str(RATE), text],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-                    self._proc.wait()
-                except Exception as e:
-                    log.error(f"TTS errore: {e}")
-                finally:
-                    self._proc = None
-                    self._fire_done()
+                    self._proc = proc
+                proc.wait()
+            except Exception as e:
+                log.error(f"TTS errore: {e}")
+            finally:
+                with self._lock:
+                    if self._proc is proc:
+                        self._proc = None
+                self._fire_done()
         threading.Thread(target=_run, daemon=True).start()
 
     def stop(self) -> None:
         with self._lock:
-            if self._proc and self._proc.poll() is None:
-                self._proc.terminate()
-                self._proc = None
+            proc = self._proc
+            self._proc = None
+        if proc and proc.poll() is None:
+            proc.terminate()
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
