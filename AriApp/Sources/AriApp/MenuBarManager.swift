@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-// Tre finestre indipendenti:
-//   orbPanel      — orb animato, trasparente
+// Finestre indipendenti:
+//   orbPanel      — orb animato flottante (modalità floating)
+//   notchPanel    — orb nel notch espandibile (modalità notch)
 //   responsePanel — testo risposta, ridimensionabile
 //   inputPanel    — campo input, ridimensionabile in larghezza
 
@@ -10,23 +11,51 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
 
     private var statusItem:       NSStatusItem?
     private var orbPanel:         AriPanel?
+    private var notchPanel:       NotchPanel?
     private var responsePanel:    AriPanel?
     private var inputPanel:       AriPanel?
     private var responseTextView: NSTextView?
     private var inputField:       NSTextField?
     private var micButton:        HoldMicButton?
+    private var sendButton:       NSButton?
+    private var autoHideTask:     DispatchWorkItem?
 
     func setup() {
         buildStatusItem()
-        buildOrbPanel()
+        let s = SettingsManager.shared.settings
+        if s.orbMode == .notch {
+            buildNotchPanel()
+        } else {
+            buildOrbPanel()
+        }
         buildResponsePanel()
         buildInputPanel()
         wireCallbacks()
         wireSnapManager()
+        wireSettingsObservers()
         NotificationManager.shared.setup()
-        // Riattiva wake systems se erano abilitati
-        let s = SettingsManager.shared.settings
         if s.clapWakeEnabled { ClapWakeManager.shared.start() }
+    }
+
+    // MARK: - Notch Panel (modalità notch)
+
+    private func buildNotchPanel() {
+        notchPanel = NotchPanel.make()
+    }
+
+    func switchOrbMode(_ mode: OrbMode) {
+        switch mode {
+        case .notch:
+            orbPanel?.orderOut(nil)
+            orbPanel = nil
+            if notchPanel == nil { notchPanel = NotchPanel.make() }
+        case .floating:
+            notchPanel?.orderOut(nil)
+            notchPanel = nil
+            if orbPanel == nil { buildOrbPanel(); orbPanel?.makeKeyAndOrderFront(nil) }
+        }
+        SettingsManager.shared.settings.orbMode = mode
+        SettingsManager.shared.save()
     }
 
     // MARK: - Status item
@@ -151,8 +180,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         hosting.view.layer?.backgroundColor = CGColor.clear
         p.contentView = hosting.view
 
-        place(p, corner: .topLeft, offset: NSPoint(x: 40, y: 40))
         orbPanel = p
+        restoreFrame(p) { self.place(p, corner: .topLeft, offset: NSPoint(x: 40, y: 40)) }
         p.makeKeyAndOrderFront(nil)
     }
 
@@ -166,9 +195,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         p.minSize   = NSSize(width: 200, height: 100)
         p.delegate  = self
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
-        container.autoresizingMask = [.width, .height]
-        p.contentView = container
+        let vibrancy = makeVibrancy(width: w, height: h)
+        p.contentView = vibrancy
 
         let pad: CGFloat = 8
         let sv = NSScrollView(frame: NSRect(x: pad, y: pad, width: w - pad*2, height: h - pad*2))
@@ -176,23 +204,23 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         sv.hasVerticalScroller = true
         sv.autohidesScrollers  = true
         sv.drawsBackground     = false
-        container.addSubview(sv)
+        vibrancy.addSubview(sv)
 
+        let fontSize = CGFloat(SettingsManager.shared.settings.responseFontSize)
         let tv = NSTextView(frame: NSRect(x: 0, y: 0, width: w - pad*2, height: h - pad*2))
         tv.autoresizingMask    = [.width]
         tv.isEditable          = false
         tv.isSelectable        = true
         tv.drawsBackground     = false
         tv.textColor           = .white
-        tv.font                = .systemFont(ofSize: 13)
+        tv.font                = .systemFont(ofSize: fontSize)
         tv.textContainerInset  = NSSize(width: 8, height: 8)
         tv.isAutomaticLinkDetectionEnabled = false
         sv.documentView        = tv
         responseTextView       = tv
 
-        place(p, corner: .topRight, offset: NSPoint(x: 40, y: 40))
         responsePanel = p
-        // parte nascosta
+        restoreFrame(p) { self.place(p, corner: .topRight, offset: NSPoint(x: 40, y: 40)) }
     }
 
     // MARK: - Input
@@ -205,9 +233,8 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         p.minSize = NSSize(width: 200, height: h)
         p.maxSize = NSSize(width: 9999, height: h)
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
-        container.autoresizingMask = [.width, .height]
-        p.contentView = container
+        let vibrancy = makeVibrancy(width: w, height: h, cornerRadius: 23)
+        p.contentView = vibrancy
 
         let pad: CGFloat   = 8
         let btnSz: CGFloat = 26
@@ -219,11 +246,12 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         sendBtn.isBordered       = false
         sendBtn.image            = NSImage(systemSymbolName: "arrow.up.circle.fill",
                                            accessibilityDescription: "Invia")
-        sendBtn.contentTintColor = NSColor(red: 0, green: 0.85, blue: 1.0, alpha: 1.0)
+        sendBtn.contentTintColor = ColorManager.shared.accentColor
         sendBtn.autoresizingMask = [.minXMargin]
         sendBtn.target = self
         sendBtn.action = #selector(sendMessage)
-        container.addSubview(sendBtn)
+        vibrancy.addSubview(sendBtn)
+        sendButton = sendBtn
 
         // Bottone camera (seconda posizione da sinistra) — cattura schermo
         let camX   = pad + btnSz + 4
@@ -236,7 +264,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         camBtn.autoresizingMask = []
         camBtn.target           = self
         camBtn.action           = #selector(captureScreen)
-        container.addSubview(camBtn)
+        vibrancy.addSubview(camBtn)
 
         // Bottone microfono (sinistra) — hold-to-talk
         let micBtn = HoldMicButton(frame: NSRect(x: pad, y: (h-btnSz)/2, width: btnSz, height: btnSz))
@@ -247,7 +275,7 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         micBtn.contentTintColor = NSColor.white.withAlphaComponent(0.4)
         micBtn.onPress   = { [weak self] in self?.voicePressed() }
         micBtn.onRelease = { [weak self] in self?.voiceReleased() }
-        container.addSubview(micBtn)
+        vibrancy.addSubview(micBtn)
         micButton = micBtn
 
         // Campo testo (dopo mic + camera)
@@ -262,11 +290,11 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         field.focusRingType     = .none
         field.autoresizingMask  = [.width]
         field.delegate          = self
-        container.addSubview(field)
+        vibrancy.addSubview(field)
         inputField = field
 
-        place(p, corner: .bottomRight, offset: NSPoint(x: 40, y: 40))
         inputPanel = p
+        restoreFrame(p) { self.place(p, corner: .bottomRight, offset: NSPoint(x: 40, y: 40)) }
         p.makeKeyAndOrderFront(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             p.makeFirstResponder(self.inputField)
@@ -301,19 +329,32 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         if chrome {
             p.titlebarAppearsTransparent = true
             p.titleVisibility            = .hidden
-            p.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.11, alpha: 0.92)
+            p.backgroundColor = .clear
             p.isOpaque        = false
             p.hasShadow       = true
-            // Rimuove i tre pallini (close/miniaturize/zoom)
-            p.standardWindowButton(.closeButton)?.isHidden    = true
+            p.standardWindowButton(.closeButton)?.isHidden       = true
             p.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            p.standardWindowButton(.zoomButton)?.isHidden     = true
+            p.standardWindowButton(.zoomButton)?.isHidden        = true
         } else {
             p.backgroundColor = .clear
             p.isOpaque        = false
             p.hasShadow       = false
         }
         return p
+    }
+
+    // NSVisualEffectView stile FaceTime — sfondo vetro smerigliato scuro
+    private func makeVibrancy(width: CGFloat, height: CGFloat, cornerRadius: CGFloat = 12) -> NSVisualEffectView {
+        let v = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        v.material      = .hudWindow
+        v.blendingMode  = .behindWindow
+        v.state         = .active
+        v.appearance    = NSAppearance(named: .darkAqua)
+        v.autoresizingMask = [.width, .height]
+        v.wantsLayer    = true
+        v.layer?.cornerRadius  = cornerRadius
+        v.layer?.masksToBounds = true
+        return v
     }
 
     private enum Corner { case topLeft, topRight, bottomLeft, bottomRight }
@@ -334,14 +375,95 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         p.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    // MARK: - NSWindowDelegate (resize risposta)
+    // MARK: - Settings observers
+
+    private func wireSettingsObservers() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onAccentColorChanged(_:)),
+            name: ColorManager.accentDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onFontSizeChanged(_:)),
+            name: .ariFontSizeChanged, object: nil)
+    }
+
+    @objc private func onAccentColorChanged(_ n: Notification) {
+        guard let color = n.object as? NSColor else { return }
+        sendButton?.contentTintColor = color
+    }
+
+    @objc private func onFontSizeChanged(_ n: Notification) {
+        guard let size = n.object as? Double else { return }
+        responseTextView?.font = .systemFont(ofSize: CGFloat(size))
+    }
+
+    // MARK: - NSWindowDelegate
 
     func windowDidResize(_ notification: Notification) {
-        guard let tv = responseTextView,
-              let sv = tv.enclosingScrollView else { return }
-        let w = sv.contentSize.width
-        let h = max(sv.contentSize.height, 80)
-        tv.frame = NSRect(x: 0, y: 0, width: w, height: h)
+        // Adatta il NSTextView alla nuova size del pannello risposta
+        if let tv = responseTextView, let sv = tv.enclosingScrollView {
+            let w = sv.contentSize.width
+            let h = max(sv.contentSize.height, 80)
+            tv.frame = NSRect(x: 0, y: 0, width: w, height: h)
+        }
+        if let panel = notification.object as? AriPanel { saveFrame(panel) }
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        if let panel = notification.object as? AriPanel { saveFrame(panel) }
+    }
+
+    // MARK: - Persistenza posizioni (Pack C)
+
+    private func panelKey(_ panel: AriPanel) -> String? {
+        if panel === orbPanel      { return "ari.frame.orb"      }
+        if panel === responsePanel { return "ari.frame.response"  }
+        if panel === inputPanel    { return "ari.frame.input"     }
+        return nil
+    }
+
+    private func saveFrame(_ panel: AriPanel) {
+        guard let key = panelKey(panel) else { return }
+        let f = panel.frame
+        UserDefaults.standard.set(
+            [f.origin.x, f.origin.y, f.width, f.height],
+            forKey: key
+        )
+    }
+
+    private func restoreFrame(_ panel: AriPanel, fallback: () -> Void) {
+        guard let key = panelKey(panel),
+              let arr = UserDefaults.standard.array(forKey: key) as? [Double],
+              arr.count == 4 else { fallback(); return }
+        panel.setFrame(
+            NSRect(x: arr[0], y: arr[1], width: arr[2], height: arr[3]),
+            display: false
+        )
+    }
+
+    // MARK: - Auto-resize contenuto risposta (Pack A)
+
+    private func autoResizeResponse() {
+        guard let panel = responsePanel,
+              let tv    = responseTextView,
+              let lm    = tv.layoutManager,
+              let tc    = tv.textContainer else { return }
+
+        lm.ensureLayout(for: tc)
+        let textH  = lm.usedRect(for: tc).height + tv.textContainerInset.height * 2 + 20
+        let screen = panel.screen ?? NSScreen.main
+        let maxH   = (screen?.visibleFrame.height ?? 800) * 0.62
+        let newH   = max(120, min(textH, maxH))
+
+        guard abs(panel.frame.height - newH) > 6 else { return }
+
+        var f = panel.frame
+        f.origin.y  -= (newH - f.height)   // cresce verso l'alto
+        f.size.height = newH
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration        = 0.18
+            ctx.timingFunction  = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(f, display: true)
+        }
     }
 
     // MARK: - Callbacks WebSocket
@@ -432,12 +554,29 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     }
 
     private func setResponse(_ text: String) {
-        guard let tv = responseTextView else { return }
-        tv.string = text
-        tv.scrollToEndOfDocument(nil)
-        if responsePanel?.isVisible == false {
-            responsePanel?.makeKeyAndOrderFront(nil)
+        if let tv = responseTextView {
+            tv.string = text
+            tv.scrollToEndOfDocument(nil)
+            if responsePanel?.isVisible == false {
+                responsePanel?.makeKeyAndOrderFront(nil)
+            }
+            DispatchQueue.main.async { self.autoResizeResponse() }
         }
+        if SettingsManager.shared.settings.orbMode == .notch {
+            AriNotchViewModel.shared.setResponse(text)
+        }
+        scheduleAutoHide()
+    }
+
+    private func scheduleAutoHide() {
+        autoHideTask?.cancel()
+        let s = SettingsManager.shared.settings
+        guard s.autoHideResponse else { return }
+        let task = DispatchWorkItem { [weak self] in
+            self?.responsePanel?.orderOut(nil)
+        }
+        autoHideTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + s.autoHideDelay, execute: task)
     }
 
     // MARK: - Voce (hold-to-talk)

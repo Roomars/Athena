@@ -26,8 +26,7 @@ async def monitor_loop(manager, tts) -> None:
                         "title": notif.title,
                         "body":  notif.body,
                     })
-                # TTS indipendente dalla connessione Swift
-                if notif.speak:
+                if notif.speak and manager.connection:
                     tts.speak(f"{notif.title}. {notif.body}")
             except Exception as e:
                 log.debug(f"trigger {trigger.__class__.__name__} errore: {e}")

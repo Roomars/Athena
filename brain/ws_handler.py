@@ -103,6 +103,17 @@ async def handle_ws(ws: WebSocket):
             elif msg_type == "tts_stop":
                 tts.stop()
 
+            elif msg_type == "set_tts_engine":
+                tts.set_engine(msg.get("engine", "apple"))
+
+            elif msg_type == "set_thresholds":
+                from .stats_monitor import update_thresholds
+                update_thresholds(
+                    cpu  = float(msg.get("cpu",  85.0)),
+                    ram  = float(msg.get("ram",  88.0)),
+                    temp = float(msg.get("temp", 85.0)),
+                )
+
             elif msg_type == "privacy_mode":
                 manager._privacy_mode = msg.get("enabled", False)
                 log.info(f"privacy mode: {manager._privacy_mode}")

@@ -1,5 +1,10 @@
 import Foundation
 
+enum OrbMode: String, Codable {
+    case floating   // pannello flottante libero (comportamento attuale)
+    case notch      // ancorato al notch, espandibile
+}
+
 struct AriSettings: Codable {
     var version: Int = 1
     // Hotkey voce — keyCode + modifiers (CGEventFlags raw)
@@ -9,7 +14,23 @@ struct AriSettings: Codable {
     var clapWakeEnabled: Bool = false
     var ttsEnabled:      Bool = true
     var ttsVoice:        String = "Federica (Premium)"
-    var setupCompleted:  Bool = false
+    var snapEnabled:         Bool   = true
+    var orbMode:             OrbMode = .floating
+    var proactiveEnabled:    Bool   = true
+    var panelOpacity:        Float  = 1.0
+    // TTS engine — "apple" | "kokoro"
+    var ttsEngine:           String = "apple"
+    // Accent color
+    var accentColorHex:      String = "#00D9FF"
+    // Alert thresholds
+    var cpuAlertThreshold:   Double = 85.0
+    var ramAlertThreshold:   Double = 88.0
+    var tempAlertThreshold:  Double = 85.0
+    // Risposta
+    var responseFontSize:    Double = 13.0
+    var autoHideResponse:    Bool   = false
+    var autoHideDelay:       Double = 10.0
+    var setupCompleted:      Bool   = false
 }
 
 final class SettingsManager {

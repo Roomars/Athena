@@ -5,8 +5,11 @@ final class SnapManager {
 
     private var groups:        [[AriPanel]]                  = []
     private var lastPositions: [ObjectIdentifier: NSPoint]   = [:]
+    private var lastSizes:     [ObjectIdentifier: NSSize]    = [:]
     private var isMovingGroup  = false
+    private var isResizingGroup = false
     private let snapThreshold: CGFloat = 14
+    private let edgeThreshold: CGFloat = 20   // snap verso bordi schermo
     private let accentColor    = NSColor(red: 0, green: 0.85, blue: 1, alpha: 0.7)
 
     // MARK: - Registration
@@ -23,19 +26,31 @@ final class SnapManager {
     }
 
     private func observe(_ panel: AriPanel) {
-        lastPositions[ObjectIdentifier(panel)] = panel.frame.origin
+        let id = ObjectIdentifier(panel)
+        lastPositions[id] = panel.frame.origin
+        lastSizes[id]     = panel.frame.size
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(panelDidMove(_:)),
             name: NSWindow.didMoveNotification,
             object: panel
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(panelDidResize(_:)),
+            name: NSWindow.didResizeNotification,
+            object: panel
+        )
+    }
+
+    var isEnabled: Bool {
+        get { SettingsManager.shared.settings.snapEnabled }
     }
 
     // MARK: - Move sync
 
     @objc private func panelDidMove(_ note: Notification) {
-        guard !isMovingGroup, let moved = note.object as? AriPanel else { return }
+        guard isEnabled, !isMovingGroup, let moved = note.object as? AriPanel else { return }
         let id = ObjectIdentifier(moved)
         guard let last = lastPositions[id] else {
             lastPositions[id] = moved.frame.origin; return
@@ -58,9 +73,56 @@ final class SnapManager {
         checkSnap(movedGroup: findGroup(of: moved))
     }
 
+    // MARK: - Resize propagation (Pack B)
+
+    @objc private func panelDidResize(_ note: Notification) {
+        guard isEnabled, !isResizingGroup, !isMovingGroup,
+              let resized = note.object as? AriPanel else { return }
+        let id      = ObjectIdentifier(resized)
+        let oldSize = lastSizes[id] ?? resized.frame.size
+        let newSize = resized.frame.size
+        let dw = newSize.width  - oldSize.width
+        let dh = newSize.height - oldSize.height
+        lastSizes[id] = newSize
+        guard abs(dw) > 0.5 || abs(dh) > 0.5 else { return }
+
+        isResizingGroup = true
+        let group = findGroup(of: resized)
+        let rf    = resized.frame
+        let t: CGFloat = 3
+
+        for peer in group where peer !== resized {
+            var pf = peer.frame
+            // Condivide bordo destro di resized → sposta peer X
+            if abs(rf.maxX - pf.minX) < t {
+                pf.origin.x += dw
+                pf.size.width = max(peer.minSize.width, pf.size.width - dw)
+            }
+            // Condivide bordo sinistro di resized → peer si allarga a sinistra
+            else if abs(rf.minX - pf.maxX) < t {
+                pf.size.width = max(peer.minSize.width, pf.size.width + dw)
+            }
+            // Condivide bordo superiore di resized → sposta peer Y
+            if abs(rf.maxY - pf.minY) < t {
+                pf.origin.y += dh
+                pf.size.height = max(peer.minSize.height, pf.size.height - dh)
+            }
+            // Condivide bordo inferiore di resized → peer si allarga
+            else if abs(rf.minY - pf.maxY) < t {
+                pf.size.height = max(peer.minSize.height, pf.size.height + dh)
+            }
+            peer.setFrame(pf, display: true, animate: false)
+            lastSizes[ObjectIdentifier(peer)]     = pf.size
+            lastPositions[ObjectIdentifier(peer)] = pf.origin
+        }
+        isResizingGroup = false
+        updateVisuals()
+    }
+
     // MARK: - Snap detection
 
     private func checkSnap(movedGroup: [AriPanel]) {
+        // 1. Snap pannello↔pannello
         for panel in movedGroup {
             for group in groups where !group.contains(where: { $0 === panel }) {
                 for other in group {
@@ -76,7 +138,33 @@ final class SnapManager {
                 }
             }
         }
+        // 2. Snap verso bordi schermo
+        for panel in movedGroup {
+            if let neo = snapToScreenEdge(panel) {
+                isMovingGroup = true
+                panel.setFrameOrigin(neo)
+                lastPositions[ObjectIdentifier(panel)] = neo
+                isMovingGroup = false
+            }
+        }
         updateVisuals()
+    }
+
+    private func snapToScreenEdge(_ panel: AriPanel) -> NSPoint? {
+        guard let screen = panel.screen ?? NSScreen.main else { return nil }
+        let sf = screen.visibleFrame
+        let pf = panel.frame
+        let t  = edgeThreshold
+        var x  = pf.origin.x
+        var y  = pf.origin.y
+        var snapped = false
+
+        if abs(pf.minX - sf.minX) < t { x = sf.minX;             snapped = true }
+        if abs(pf.maxX - sf.maxX) < t { x = sf.maxX - pf.width;  snapped = true }
+        if abs(pf.minY - sf.minY) < t { y = sf.minY;             snapped = true }
+        if abs(pf.maxY - sf.maxY) < t { y = sf.maxY - pf.height; snapped = true }
+
+        return snapped ? NSPoint(x: x, y: y) : nil
     }
 
     // Returns the snapped frame for `a` relative to `b`:
@@ -126,6 +214,11 @@ final class SnapManager {
         groups.remove(at: hi)
         groups.remove(at: lo)
         groups.append(merged)
+    }
+
+    func separateAll() {
+        groups = groups.flatMap { $0 }.map { [$0] }
+        updateVisuals()
     }
 
     func separate(_ panel: AriPanel) {

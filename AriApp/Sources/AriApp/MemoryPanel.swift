@@ -49,7 +49,7 @@ final class MemoryPanel {
         p.title                       = "Memoria · Ari"
         p.titlebarAppearsTransparent  = true
         p.titleVisibility             = .hidden
-        p.backgroundColor             = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 0.98)
+        p.backgroundColor             = .clear
         p.isOpaque                    = false
         p.hasShadow                   = true
         p.isFloatingPanel             = true
@@ -61,31 +61,38 @@ final class MemoryPanel {
         p.standardWindowButton(.miniaturizeButton)?.isHidden = true
         p.standardWindowButton(.zoomButton)?.isHidden        = true
 
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
-        root.autoresizingMask = [.width, .height]
-        p.contentView = root
+        let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: W, height: H))
+        vibrancy.material      = .hudWindow
+        vibrancy.blendingMode  = .behindWindow
+        vibrancy.state         = .active
+        vibrancy.appearance    = NSAppearance(named: .darkAqua)
+        vibrancy.autoresizingMask = [.width, .height]
+        vibrancy.wantsLayer    = true
+        vibrancy.layer?.cornerRadius  = 14
+        vibrancy.layer?.masksToBounds = true
+        p.contentView = vibrancy
 
         // ── Header ───────────────────────────────────────────────────────────
         let headerH: CGFloat = 44
         let header = buildHeader(width: W, height: headerH)
         header.frame.origin.y = H - headerH
-        root.addSubview(header)
+        vibrancy.addSubview(header)
 
         // ── Divisore verticale ───────────────────────────────────────────────
         let divX: CGFloat  = W * 0.62
-        let bodyH: CGFloat = H - headerH - 28  // 28 = footer
+        let bodyH: CGFloat = H - headerH - 28
         let divider = NSView(frame: NSRect(x: divX, y: 28, width: 1, height: bodyH))
         divider.autoresizingMask = [.height, .maxXMargin]
         divider.wantsLayer = true
         divider.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
-        root.addSubview(divider)
+        vibrancy.addSubview(divider)
 
         // ── Colonna sinistra — Fatti ─────────────────────────────────────────
         let leftTV = buildScrollableTextView(
             frame: NSRect(x: 0, y: 28, width: divX, height: bodyH)
         )
         leftTV.enclosingScrollView?.autoresizingMask = [.width, .height]
-        root.addSubview(leftTV.enclosingScrollView!)
+        vibrancy.addSubview(leftTV.enclosingScrollView!)
         factsView = leftTV
 
         // ── Colonna destra — Episodi ─────────────────────────────────────────
@@ -93,12 +100,12 @@ final class MemoryPanel {
             frame: NSRect(x: divX + 1, y: 28, width: W - divX - 1, height: bodyH)
         )
         rightTV.enclosingScrollView?.autoresizingMask = [.width, .height, .minXMargin]
-        root.addSubview(rightTV.enclosingScrollView!)
+        vibrancy.addSubview(rightTV.enclosingScrollView!)
         episodesView = rightTV
 
         // ── Footer ───────────────────────────────────────────────────────────
         let footer = buildFooter(width: W)
-        root.addSubview(footer)
+        vibrancy.addSubview(footer)
 
         // ── Centra sullo schermo ─────────────────────────────────────────────
         if let screen = NSScreen.main {
@@ -123,7 +130,7 @@ final class MemoryPanel {
         let bar = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         bar.autoresizingMask = [.width]
         bar.wantsLayer = true
-        bar.layer?.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.11, alpha: 1).cgColor
+        bar.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.04).cgColor
 
         // Titolo
         let title = NSTextField(labelWithString: "MEMORIA")
@@ -176,7 +183,7 @@ final class MemoryPanel {
         let bar = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 28))
         bar.autoresizingMask = [.width]
         bar.wantsLayer = true
-        bar.layer?.backgroundColor = NSColor(red: 0.04, green: 0.04, blue: 0.07, alpha: 1).cgColor
+        bar.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.03).cgColor
 
         let sep = NSView(frame: NSRect(x: 0, y: 27, width: width, height: 1))
         sep.autoresizingMask = [.width]

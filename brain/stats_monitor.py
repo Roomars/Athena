@@ -88,9 +88,20 @@ _RULES: list[_Rule] = [
     _Rule(
         key="temp_c", threshold=85, cooldown=300, consecutive=2,
         title="Temperatura elevata",
-        body_fn=lambda v: f"CPU a {v:.0f}°C. Controlla se c'è qualcosa che la stessa scalda.",
+        body_fn=lambda v: f"CPU a {v:.0f}°C. Controlla se c'è qualcosa che la scalda.",
     ),
 ]
+
+
+def update_thresholds(cpu: float, ram: float, temp: float) -> None:
+    """Aggiorna le soglie di alert a runtime (chiamato da ws_handler su set_thresholds)."""
+    for rule in _RULES:
+        if rule.key == "cpu_pct":
+            rule.threshold = cpu
+        elif rule.key == "mem_pct":
+            rule.threshold = ram
+        elif rule.key == "temp_c":
+            rule.threshold = temp
 
 
 class AnomalyDetector:
@@ -113,7 +124,7 @@ class AnomalyDetector:
 
 # ── Loop principale ───────────────────────────────────────────────────────────
 
-async def stats_loop(send_fn) -> None:
+async def stats_loop(send_fn, manager=None) -> None:
     """Loop principale — send_fn è manager.send dal ws_handler."""
     from .tts import tts  # import locale per evitare circolarità al boot
 
@@ -177,4 +188,5 @@ async def stats_loop(send_fn) -> None:
                 "title": title,
                 "body":  body,
             })
-            tts.speak(f"{title}. {body}")
+            if manager is None or manager.connection:
+                tts.speak(f"{title}. {body}")

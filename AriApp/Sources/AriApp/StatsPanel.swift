@@ -56,8 +56,8 @@ final class StatsPanel {
         )
         p.title                       = "Sistema · Ari"
         p.titlebarAppearsTransparent  = true
-        p.titleVisibility             = .visible
-        p.backgroundColor             = NSColor(red: 0.06, green: 0.06, blue: 0.10, alpha: 0.97)
+        p.titleVisibility             = .hidden
+        p.backgroundColor             = .clear
         p.isOpaque                    = false
         p.hasShadow                   = true
         p.isFloatingPanel             = true
@@ -68,28 +68,35 @@ final class StatsPanel {
         p.standardWindowButton(.miniaturizeButton)?.isHidden = true
         p.standardWindowButton(.zoomButton)?.isHidden        = true
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
-        container.autoresizingMask = [.width, .height]
-        p.contentView = container
+        let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+        vibrancy.material      = .hudWindow
+        vibrancy.blendingMode  = .behindWindow
+        vibrancy.state         = .active
+        vibrancy.appearance    = NSAppearance(named: .darkAqua)
+        vibrancy.autoresizingMask = [.width, .height]
+        vibrancy.wantsLayer    = true
+        vibrancy.layer?.cornerRadius  = 12
+        vibrancy.layer?.masksToBounds = true
+        p.contentView = vibrancy
 
         // Header
         let hdr = NSTextField(labelWithString: "SISTEMA")
         hdr.font      = .monospacedSystemFont(ofSize: 10, weight: .bold)
         hdr.textColor = NSColor(red: 0, green: 0.85, blue: 1, alpha: 0.8)
         hdr.frame     = NSRect(x: 12, y: h - 26, width: 160, height: 16)
-        container.addSubview(hdr)
+        vibrancy.addSubview(hdr)
 
         // Separatore
         let sep = NSBox(frame: NSRect(x: 0, y: h - headerH, width: w, height: 1))
         sep.boxType = .separator
-        container.addSubview(sep)
+        vibrancy.addSubview(sep)
 
         // Righe metriche (dal basso verso l'alto — NSView origin in basso a sinistra)
         for (i, entry) in rowOrder.enumerated() {
             let y = footerH + CGFloat(rowOrder.count - 1 - i) * rowH
             let row = StatRow(frame: NSRect(x: 0, y: y, width: w, height: rowH),
                               label: entry.label, unit: entry.unit)
-            container.addSubview(row)
+            vibrancy.addSubview(row)
             rows[entry.key] = row
         }
 

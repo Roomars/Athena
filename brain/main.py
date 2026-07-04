@@ -39,7 +39,7 @@ async def lifespan(_app: FastAPI):
     stt.load_async()
 
     asyncio.create_task(monitor_loop(manager, tts))
-    asyncio.create_task(stats_loop(manager.send))
+    asyncio.create_task(stats_loop(manager.send, manager))
 
     async def _decay_loop():
         await asyncio.sleep(5)
