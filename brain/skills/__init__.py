@@ -1,4 +1,7 @@
 from .open_app        import OpenAppSkill
+from .obsidian        import ObsidianSkill
+from .calendar_skill  import CalendarSkill
+from .mail_skill      import MailSkill
 from .safari_control  import SafariControlSkill
 from .web_search      import WebSearchSkill
 from .youtube         import YoutubeSkill
@@ -32,6 +35,9 @@ ALL_SKILLS = [
     FlightFinderSkill(),
     GameUpdaterSkill(),
     SendMessageSkill(),
+    ObsidianSkill(),
+    CalendarSkill(),
+    MailSkill(),
     ReminderSkill(),
     MacSettingsSkill(),
     DesktopControlSkill(),

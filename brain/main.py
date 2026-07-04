@@ -13,6 +13,7 @@ from .ws_handler import handle_ws, manager
 from .tts import tts
 from .stt import stt
 from .proactive.monitor import monitor_loop
+from .proactive.heartbeat import heartbeat_loop
 from .stats_monitor import stats_loop
 from .memory_extractor import decay_confidence
 
@@ -40,6 +41,7 @@ async def lifespan(_app: FastAPI):
 
     asyncio.create_task(monitor_loop(manager, tts))
     asyncio.create_task(stats_loop(manager.send, manager))
+    asyncio.create_task(heartbeat_loop(manager.send, tts))
 
     async def _decay_loop():
         await asyncio.sleep(5)

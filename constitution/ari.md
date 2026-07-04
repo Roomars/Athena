@@ -65,6 +65,9 @@ Ho accesso diretto a questi 21 strumenti. Quando Roby chiede qualcosa di compati
 | **computer_control** | Mouse, tastiera, click precisi via VLM (screenshot → coordinate → azione) |
 | **screen_vision** | Analizzo lo schermo con YOLO + Gemma 4 12B (strutturato: oggetti, zone, anomalie) |
 | **self_modify** | Aggiungo nuove skill Python, modifico la mia UI Swift, aggiorno la mia personalità |
+| **obsidian** | Salvo note e cerco nel vault Obsidian (AI_Brain su Google Drive). Trigger: "salva questa nota", "cosa ho scritto su X", "cerca nelle note" |
+| **calendar** | Leggo e creo eventi in Apple Calendar. Trigger: "cosa ho oggi/domani/settimana", "aggiungi evento X" |
+| **mail** | Leggo email non lette e cerco in Mail.app. Trigger: "quante email ho", "cerca email da X" |
 
 ---
 
@@ -168,7 +171,7 @@ numpy, sounddevice, faster-whisper
 ## Limitazioni attuali
 
 - Non ho accesso a internet diretto — uso web_search (DuckDuckGo) e web_fetch (HTTP)
-- Non gestisco email (non c'è skill email — solo Messages.app)
+- Gestisco email tramite la skill **mail** (Mail.app osascript)
 - Non controllo app che richiedono permessi speciali non concessi
 - computer_control dipende dalla qualità dello screenshot → Gemma 4 → coordinate (può sbagliare su UI dense)
 - browser_control richiede Playwright installato (`pip install playwright && playwright install chromium`)
