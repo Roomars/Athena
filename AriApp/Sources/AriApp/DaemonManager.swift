@@ -73,8 +73,8 @@ final class DaemonManager {
     }
 
     private func waitForHealth(attempt: Int = 0) {
-        guard attempt < 30 else {
-            print("[DaemonManager] /health non risponde dopo 30 tentativi — controlla i log del daemon")
+        guard attempt < 60 else {
+            print("[DaemonManager] /health non risponde dopo 60 tentativi — controlla i log del daemon")
             return
         }
         // Prima attesa più lunga: il daemon impiega qualche secondo per avviarsi

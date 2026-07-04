@@ -48,6 +48,9 @@ final class WebSocketManager: ObservableObject {
     private var pingTimer: Timer?
 
     func connect() {
+        // Cancella task precedente per evitare receive() multipli in parallelo
+        pingTimer?.invalidate()
+        task?.cancel(with: .goingAway, reason: nil)
         let url = URL(string: "ws://127.0.0.1:8765/ws")!
         task = URLSession.shared.webSocketTask(with: url)
         task?.resume()

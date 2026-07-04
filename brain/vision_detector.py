@@ -38,14 +38,14 @@ def _load() -> bool:
 
     try:
         from ultralytics import YOLO
-        import torch
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        # CPU forzato: MLX occupa già Metal/MPS → condivisione causerebbe "no stream gpu N"
+        device = "cpu"
         model  = YOLO(_MODEL_NAME)
         model.to(device)
         with _sv_lock:
             _yolo    = model
             _loading = False
-        log.info(f"YOLO pronto su {device}")
+        log.info("YOLO pronto su cpu (MLX occupa Metal)")
         return True
     except Exception as e:
         log.error(f"Errore caricamento YOLO: {e}")

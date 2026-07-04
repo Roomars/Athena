@@ -48,7 +48,11 @@ final class MenuBarManager: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         case .notch:
             orbPanel?.orderOut(nil)
             orbPanel = nil
-            if notchPanel == nil { notchPanel = NotchPanel.make() }
+            if notchPanel == nil {
+                notchPanel = NotchPanel.make()
+            } else {
+                notchPanel?.orderFrontRegardless()
+            }
         case .floating:
             notchPanel?.orderOut(nil)
             notchPanel = nil
