@@ -18,8 +18,10 @@ from .self_modify_agent import (
     classify_request, generate_swift_change, generate_personality_change,
 )
 
-_pending_mod:   dict | None = None   # proposta in attesa di conferma utente
-_pending_build: dict | None = None   # modifica applicata, in attesa del build Swift
+_pending_mod:      dict | None = None   # proposta in attesa di conferma utente
+_pending_build:    dict | None = None   # modifica applicata, in attesa del build Swift
+_approval_future:  asyncio.Future | None = None   # attesa approvazione tool
+_always_allowed:   set[str] = set()               # whitelist "Consenti sempre"
 
 log = logging.getLogger("ws")
 
@@ -133,6 +135,22 @@ async def handle_ws(ws: WebSocket):
             elif msg_type == "reject_patch":
                 await _reject_pending()
 
+            elif msg_type == "tool_approved":
+                if _approval_future and not _approval_future.done():
+                    _approval_future.set_result(True)
+
+            elif msg_type == "tool_denied":
+                if _approval_future and not _approval_future.done():
+                    _approval_future.set_result(False)
+
+            elif msg_type == "tool_always_allowed":
+                action_type = msg.get("action_type", "")
+                if action_type:
+                    _always_allowed.add(action_type)
+                    log.info(f"Whitelist aggiornata: {action_type} sempre consentito")
+                if _approval_future and not _approval_future.done():
+                    _approval_future.set_result(True)
+
             elif msg_type == "build_success":
                 await _on_build_success()
 
@@ -167,6 +185,26 @@ async def handle_ws(ws: WebSocket):
         log.error(f"errore ws: {e}")
         await save_episode(working_memory.get())
         manager.disconnect()
+
+
+async def _request_tool_approval(skill_name: str, description: str) -> bool:
+    """Chiede approvazione a Swift per skill pericolose. Ritorna True se approvata."""
+    global _approval_future
+    if skill_name in _always_allowed:
+        return True
+    _approval_future = asyncio.get_event_loop().create_future()
+    await manager.send({
+        "type":        "request_tool_approval",
+        "action_type": skill_name,
+        "description": description,
+    })
+    try:
+        return await asyncio.wait_for(asyncio.shield(_approval_future), timeout=30.0)
+    except asyncio.TimeoutError:
+        log.warning(f"Timeout approvazione tool: {skill_name}")
+        return False
+    finally:
+        _approval_future = None
 
 
 async def _voice_enroll() -> None:
@@ -248,6 +286,15 @@ async def _respond(user_input: str):
         if skill.name == "computer_control" and params.get("action") in ("click", "double_click"):
             await manager.send({"type": "response_chunk",
                                 "content": "Guardo lo schermo...", "stream": True})
+        # Skill pericolose: chiedi approvazione prima di eseguire
+        if getattr(skill, "need_approval", False):
+            approved = await _request_tool_approval(skill.name, user_input[:120])
+            if not approved:
+                await manager.send({"type": "response_chunk",
+                                    "content": "Azione annullata.", "stream": False})
+                await manager.send({"type": "response_done", "state": "idle"})
+                return
+
         try:
             skill_context = await skill.run(user_input, params)
             log.info(f"skill '{skill.name}' completata: {skill_context[:80]}")

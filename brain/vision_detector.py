@@ -37,8 +37,12 @@ def _load() -> bool:
         _loading = True
 
     try:
+        import torch
+        # Blocca MPS PRIMA che ultralytics/YOLO auto-rilevi il device.
+        # MLX già occupa Metal esclusivamente — doppio accesso causerebbe "no stream gpu N".
+        torch.backends.mps.is_available = lambda: False  # monkeypatch permanente per questo processo
+
         from ultralytics import YOLO
-        # CPU forzato: MLX occupa già Metal/MPS → condivisione causerebbe "no stream gpu N"
         device = "cpu"
         model  = YOLO(_MODEL_NAME)
         model.to(device)

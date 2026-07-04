@@ -26,8 +26,9 @@ _KEY_RE     = re.compile(r'\bpremi\s+(?:il\s+)?(?:tasto\s+)?["\']?([A-Za-z0-9\+\
 
 
 class ComputerControlSkill(Skill):
-    name        = "computer_control"
-    description = "Controlla mouse e tastiera: clicca elementi trovati via VLM, digita testo, premi tasti."
+    name          = "computer_control"
+    description   = "Controlla mouse e tastiera: clicca elementi trovati via VLM, digita testo, premi tasti."
+    need_approval = True
 
     def match(self, text: str) -> dict | None:
         if not _CTRL_RE.search(text):

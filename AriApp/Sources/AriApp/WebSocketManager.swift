@@ -148,6 +148,7 @@ final class WebSocketManager: ObservableObject {
             case "model_ready":
                 let modelId = msg["model"] as? String ?? "mlx"
                 self.modelState = .ready(modelId)
+                AriNotchNotifier.shared.notifyModelReady(modelId)
 
             case "stt_result":
                 let text = msg["text"] as? String ?? ""
@@ -157,6 +158,7 @@ final class WebSocketManager: ObservableObject {
                 let title = msg["title"] as? String ?? "Ari"
                 let body  = msg["body"]  as? String ?? ""
                 self.onProactiveNotification?(title, body)
+                AriNotchNotifier.shared.notifyProactive(title: title, body: body)
 
             case "memory_cleared":
                 self.lastResponse = ""
@@ -201,6 +203,11 @@ final class WebSocketManager: ObservableObject {
                 self.eventTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
                     DispatchQueue.main.async { self?.activeEvent = nil }
                 }
+
+            case "request_tool_approval":
+                let actionType = msg["action_type"] as? String ?? "tool"
+                let desc       = msg["description"] as? String ?? "Azione richiesta"
+                ApprovalBanner.shared.show(description: desc, mode: .tool(type: actionType))
 
             case "tts_done":
                 self.onTTSDone?()

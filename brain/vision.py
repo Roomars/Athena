@@ -23,17 +23,19 @@ def is_ready() -> bool:
 async def analyze(image_b64: str, prompt: str) -> str:
     """Descrizione testuale libera."""
     import asyncio
+    from .llm import engine
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _analyze_sync, image_b64, prompt)
+    return await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, prompt)
 
 
 async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     """
     Analisi strutturata in due stadi:
-      1. YOLO (MPS, ~50ms) → contesto oggetti/zone
+      1. YOLO (cpu, ~50ms) → contesto oggetti/zone
       2. Gemma 4 31B con prompt JSON strutturato
     """
     import asyncio
+    from .llm import engine
     from .vision_detector import detect, detection_to_context
 
     loop = asyncio.get_event_loop()
@@ -41,7 +43,7 @@ async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     yolo_ctx = detection_to_context(det)
 
     structured_prompt = _build_structured_prompt(user_prompt, yolo_ctx)
-    raw = await loop.run_in_executor(None, _analyze_sync, image_b64, structured_prompt)
+    raw = await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, structured_prompt)
 
     return _parse_structured(raw, det, user_prompt)
 

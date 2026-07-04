@@ -31,6 +31,9 @@ struct AriSettings: Codable {
     var autoHideResponse:    Bool   = false
     var autoHideDelay:       Double = 10.0
     var setupCompleted:      Bool   = false
+    // Whitelist "Consenti sempre" per approvazione tool a 3 livelli.
+    // Chiave: tipo azione (es. "computer_control", "code_runner"). Valore: sempre consentito.
+    var alwaysAllowed:       [String: Bool] = [:]
 }
 
 final class SettingsManager {

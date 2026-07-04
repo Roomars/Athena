@@ -21,8 +21,9 @@ _DANGEROUS_RE  = re.compile(
 
 
 class CodeRunnerSkill(Skill):
-    name        = "code_runner"
-    description = "Esegue codice Python o Bash in sandbox con timeout di 30 secondi."
+    name          = "code_runner"
+    description   = "Esegue codice Python o Bash in sandbox con timeout di 30 secondi."
+    need_approval = True
 
     def match(self, text: str) -> dict | None:
         block_m = _CODE_BLOCK_RE.search(text)

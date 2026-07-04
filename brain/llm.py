@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncGenerator
 
 log = logging.getLogger("llm")
@@ -20,13 +21,16 @@ class LLMEngine:
         self._loading = False
         self._lock    = threading.Lock()
         self.on_ready: list = []
+        # Thread singolo persistente: MLX Metal streams sono thread-local.
+        # Caricare e generare nello stesso thread evita "no stream gpu N".
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
 
     # ------------------------------------------------------------------
     # Caricamento
     # ------------------------------------------------------------------
 
     def load_async(self, model_id: str = MODEL_PRIMARY):
-        """Carica il modello in un thread separato — non blocca FastAPI."""
+        """Carica il modello nell'executor MLX dedicato — non blocca FastAPI."""
         def _work():
             with self._lock:
                 self._loading = True
@@ -61,7 +65,7 @@ class LLMEngine:
                 finally:
                     self._loading = False
 
-        threading.Thread(target=_work, daemon=True).start()
+        self._executor.submit(_work)
 
     @property
     def is_ready(self) -> bool:
@@ -167,7 +171,7 @@ class LLMEngine:
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", ""))
 
-        threading.Thread(target=_generate, daemon=True).start()
+        self._executor.submit(_generate)
 
         while True:
             item = await queue.get()
