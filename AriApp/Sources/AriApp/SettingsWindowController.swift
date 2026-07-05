@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ServiceManagement
 
 // Finestra impostazioni con sidebar sinistra — stile openclaw / System Preferences compatto.
@@ -51,6 +52,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var ramThreshLabel:   NSTextField!
     private var tempThreshLabel:  NSTextField!
     private var loginSwitch:      NSSwitch!
+
+    // Controls — Modello AI
+    private var modelStatusDot:    NSView!
+    private var modelStatusLabel:  NSTextField!
+    private var backendControl:    NSSegmentedControl!
+    private var localModelPopup:   NSPopUpButton!
+    private var localModelBox:     NSView!
+    private var orModelField:      NSTextField!
+    private var orApiKeyField:     NSSecureTextField!
+    private var orBox:             NSView!
+    private var cancellables       = Set<AnyCancellable>()
+
+    private let localModels = [
+        "mlx-community/gemma-4-31b-it-4bit",
+        "mlx-community/gemma-4-12b-it-4bit",
+        "mlx-community/Qwen3-14B-4bit",
+        "mlx-community/Llama-3.2-3B-Instruct-4bit",
+        "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+    ]
 
     // Controls — Aspetto
     private var snapSwitch:           NSSwitch!
@@ -420,18 +440,111 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Pannello AVANZATE
 
     private func buildAvanzate() -> NSView {
+        let s   = SettingsManager.shared.settings
         let stk = makeStack()
+
+        // ── MODELLO AI ──────────────────────────────────────────────────
 
         stk.addArrangedSubview(sectionHeader("MODELLO AI"))
         stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
 
-        let modelLabel = NSTextField(labelWithString: "Gemma 4 31B-it (MLX)")
-        modelLabel.font      = .systemFont(ofSize: 13, weight: .medium)
-        modelLabel.textColor = .controlAccentColor
-        stk.addArrangedSubview(modelLabel)
-        stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
+        // Stato dinamico (dot + label)
+        let dot = NSView()
+        dot.wantsLayer = true
+        dot.layer?.cornerRadius = 4
+        dot.layer?.backgroundColor = NSColor.systemGray.cgColor
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.widthAnchor.constraint(equalToConstant: 8).isActive  = true
+        dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        modelStatusDot = dot
+
+        modelStatusLabel = NSTextField(labelWithString: "Caricamento...")
+        modelStatusLabel.font      = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        modelStatusLabel.textColor = .secondaryLabelColor
+
+        let statusRow = NSStackView(views: [dot, modelStatusLabel])
+        statusRow.spacing = 6
+        stk.addArrangedSubview(statusRow)
+        stk.setCustomSpacing(12, after: statusRow)
+
+        // Backend segmented
+        backendControl = NSSegmentedControl(
+            labels: ["Locale MLX", "OpenRouter"],
+            trackingMode: .selectOne,
+            target: self, action: #selector(backendChanged)
+        )
+        backendControl.selectedSegment = s.selectedBackend == "openrouter" ? 1 : 0
+        stk.addArrangedSubview(row(label: "Backend", control: backendControl))
+        stk.setCustomSpacing(12, after: stk.arrangedSubviews.last!)
+
+        // Locale MLX — popup preset
+        localModelPopup = NSPopUpButton()
+        localModels.forEach { localModelPopup.addItem(withTitle: $0) }
+        if case .ready(let current) = WebSocketManager.shared.modelState,
+           let idx = localModels.firstIndex(of: current) {
+            localModelPopup.selectItem(at: idx)
+        }
+        localModelBox = row(label: "Modello locale", control: localModelPopup)
+        stk.addArrangedSubview(localModelBox)
+        stk.setCustomSpacing(8, after: localModelBox)
+
+        // OpenRouter — model id + api key
+        orModelField            = NSTextField()
+        orModelField.placeholderString = "es. openai/gpt-4o"
+        orModelField.stringValue       = s.openRouterModelId
+        orModelField.translatesAutoresizingMaskIntoConstraints = false
+        orModelField.widthAnchor.constraint(equalToConstant: 190).isActive = true
+
+        orApiKeyField            = NSSecureTextField()
+        orApiKeyField.placeholderString = "sk-or-..."
+        orApiKeyField.stringValue       = s.openRouterApiKey
+        orApiKeyField.translatesAutoresizingMaskIntoConstraints = false
+        orApiKeyField.widthAnchor.constraint(equalToConstant: 190).isActive = true
+
+        let orModelRow = row(label: "Modello", control: orModelField)
+        let orKeyRow   = row(label: "API Key",
+                             detail: "Crea chiave su openrouter.ai/keys",
+                             control: orApiKeyField)
+        let orInner    = NSStackView(views: [orModelRow, orKeyRow])
+        orInner.orientation = .vertical
+        orInner.spacing     = 8
+        orInner.translatesAutoresizingMaskIntoConstraints = false
+
+        let orWrap = NSView()
+        orWrap.translatesAutoresizingMaskIntoConstraints = false
+        orWrap.addSubview(orInner)
+        NSLayoutConstraint.activate([
+            orInner.topAnchor.constraint(equalTo: orWrap.topAnchor),
+            orInner.leadingAnchor.constraint(equalTo: orWrap.leadingAnchor),
+            orInner.bottomAnchor.constraint(equalTo: orWrap.bottomAnchor),
+            orInner.trailingAnchor.constraint(equalTo: orWrap.trailingAnchor),
+        ])
+        orBox = orWrap
+        stk.addArrangedSubview(orBox)
+        stk.setCustomSpacing(16, after: orBox)
+
+        // Pulsanti azione
+        let changeBtn    = NSButton(title: "Cambia",    target: self, action: #selector(changeModel))
+        let reloadBtn    = NSButton(title: "Riavvia",   target: self, action: #selector(reloadModel))
+        let redownBtn    = NSButton(title: "Riscarica", target: self, action: #selector(redownloadModel))
+        [changeBtn, reloadBtn, redownBtn].forEach { $0.bezelStyle = .rounded }
+        let actRow = NSStackView(views: [changeBtn, reloadBtn, redownBtn])
+        actRow.spacing = 8
+        stk.addArrangedSubview(actRow)
+        stk.setCustomSpacing(20, after: actRow)
         stk.addArrangedSubview(separator())
         stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
+
+        updateBackendVisibility()
+        updateModelStatusLabel(WebSocketManager.shared.modelState)
+
+        // Combine: aggiorna lo stato in tempo reale
+        WebSocketManager.shared.$modelState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in self?.updateModelStatusLabel(state) }
+            .store(in: &cancellables)
+
+        // ── BRAIN ───────────────────────────────────────────────────────
 
         stk.addArrangedSubview(sectionHeader("BRAIN"))
         stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
@@ -445,6 +558,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stk.addArrangedSubview(separator())
         stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
 
+        // ── DIAGNOSTICA ─────────────────────────────────────────────────
+
         stk.addArrangedSubview(sectionHeader("DIAGNOSTICA"))
         stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
 
@@ -457,7 +572,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         resetBtn.bezelStyle = .rounded
         stk.addArrangedSubview(resetBtn)
 
-        return wrap(stk)
+        return wrapScrollable(stk)
+    }
+
+    private func updateBackendVisibility() {
+        let isOR = backendControl.selectedSegment == 1
+        localModelBox?.isHidden = isOR
+        orBox?.isHidden         = !isOR
+    }
+
+    private func updateModelStatusLabel(_ state: ModelState) {
+        switch state {
+        case .loading:
+            modelStatusDot?.layer?.backgroundColor   = NSColor.systemOrange.cgColor
+            modelStatusLabel?.stringValue            = "Caricamento modello..."
+            modelStatusLabel?.textColor              = .systemOrange
+        case .ready(let id):
+            modelStatusDot?.layer?.backgroundColor   = NSColor.systemGreen.cgColor
+            let short = id.components(separatedBy: "/").last ?? id
+            modelStatusLabel?.stringValue            = "Pronto — \(short)"
+            modelStatusLabel?.textColor              = .secondaryLabelColor
+        }
     }
 
     // MARK: - Helpers UI
@@ -484,6 +619,30 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stk.bottomAnchor.constraint(lessThanOrEqualTo: v.bottomAnchor),
         ])
         return v
+    }
+
+    private func wrapScrollable(_ stk: NSStackView) -> NSView {
+        let clipDoc = NSView()
+        clipDoc.translatesAutoresizingMaskIntoConstraints = false
+        clipDoc.addSubview(stk)
+        NSLayoutConstraint.activate([
+            stk.topAnchor.constraint(equalTo: clipDoc.topAnchor),
+            stk.leadingAnchor.constraint(equalTo: clipDoc.leadingAnchor),
+            stk.trailingAnchor.constraint(equalTo: clipDoc.trailingAnchor),
+            stk.bottomAnchor.constraint(equalTo: clipDoc.bottomAnchor),
+        ])
+
+        let sv = NSScrollView()
+        sv.translatesAutoresizingMaskIntoConstraints = false
+        sv.hasVerticalScroller = true
+        sv.hasHorizontalScroller = false
+        sv.drawsBackground = false
+        sv.documentView    = clipDoc
+
+        // Forza larghezza pari al contentW così lo stack non si comprime
+        clipDoc.widthAnchor.constraint(equalToConstant: contentW).isActive = true
+
+        return sv
     }
 
     private func sectionHeader(_ text: String) -> NSTextField {
@@ -687,6 +846,46 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         autoHideDelayLabel.stringValue = "\(Int(v))s"
     }
 
+    @objc private func backendChanged() {
+        updateBackendVisibility()
+    }
+
+    @objc private func changeModel() {
+        let s = SettingsManager.shared.settings
+        let isOR = backendControl.selectedSegment == 1
+        if isOR {
+            let modelId = orModelField.stringValue.trimmingCharacters(in: .whitespaces)
+            let apiKey  = orApiKeyField.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !modelId.isEmpty else { return }
+            SettingsManager.shared.settings.selectedBackend   = "openrouter"
+            SettingsManager.shared.settings.openRouterModelId = modelId
+            SettingsManager.shared.settings.openRouterApiKey  = apiKey
+            SettingsManager.shared.save()
+            WebSocketManager.shared.switchModel(modelId: modelId, backend: "openrouter", apiKey: apiKey)
+        } else {
+            let modelId = localModels[localModelPopup.indexOfSelectedItem]
+            SettingsManager.shared.settings.selectedBackend = "mlx"
+            SettingsManager.shared.save()
+            WebSocketManager.shared.switchModel(modelId: modelId, backend: "mlx")
+        }
+        _ = s // silence unused warning
+    }
+
+    @objc private func reloadModel() {
+        WebSocketManager.shared.reloadModel()
+    }
+
+    @objc private func redownloadModel() {
+        let alert = NSAlert()
+        alert.messageText     = "Riscarica modello?"
+        alert.informativeText = "Il modello verrà eliminato e riscaricato. L'operazione può richiedere diversi minuti."
+        alert.addButton(withTitle: "Riscarica")
+        alert.addButton(withTitle: "Annulla")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        WebSocketManager.shared.redownloadModel()
+    }
+
     @objc private func restartBrain() {
         DaemonManager.shared.stop()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -783,6 +982,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
 extension Notification.Name {
     static let ariFontSizeChanged = Notification.Name("ari.fontSizeChanged")
+    static let ariModelError      = Notification.Name("ari.modelError")
 }
 
 // MARK: - NSTableViewDataSource / Delegate

@@ -75,6 +75,15 @@ final class WebSocketManager: ObservableObject {
     func sendTTSStop()    { sendJSON(["type": "tts_stop"])    }
     func setTTSEnabled(_ on: Bool) { sendJSON(["type": "tts_enabled", "enabled": on]) }
 
+    func switchModel(modelId: String, backend: String, apiKey: String = "") {
+        var p: [String: Any] = ["type": "model_switch", "model_id": modelId, "backend": backend]
+        if !apiKey.isEmpty { p["api_key"] = apiKey }
+        sendJSON(p)
+    }
+
+    func reloadModel()     { sendJSON(["type": "model_reload"])     }
+    func redownloadModel() { sendJSON(["type": "model_redownload"]) }
+
     func sendPrivacyMode(enabled: Bool) {
         sendJSON(["type": "privacy_mode", "enabled": enabled])
     }
@@ -208,6 +217,11 @@ final class WebSocketManager: ObservableObject {
                 let actionType = msg["action_type"] as? String ?? "tool"
                 let desc       = msg["description"] as? String ?? "Azione richiesta"
                 ApprovalBanner.shared.show(description: desc, mode: .tool(type: actionType))
+
+            case "model_error":
+                let err = msg["error"] as? String ?? "Errore modello"
+                self.modelState = .loading   // torna a loading per mostrare il problema
+                NotificationCenter.default.post(name: .ariModelError, object: err)
 
             case "tts_done":
                 self.onTTSDone?()

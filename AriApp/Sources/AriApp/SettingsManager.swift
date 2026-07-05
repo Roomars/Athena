@@ -34,6 +34,10 @@ struct AriSettings: Codable {
     // Whitelist "Consenti sempre" per approvazione tool a 3 livelli.
     // Chiave: tipo azione (es. "computer_control", "code_runner"). Valore: sempre consentito.
     var alwaysAllowed:       [String: Bool] = [:]
+    // Modello AI
+    var selectedBackend:     String = "mlx"           // "mlx" | "openrouter"
+    var openRouterModelId:   String = ""
+    var openRouterApiKey:    String = ""
 }
 
 final class SettingsManager {

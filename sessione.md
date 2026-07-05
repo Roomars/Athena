@@ -5,7 +5,7 @@
 L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria/skills).
 
 ## Lavoro corrente
-**Sessione 03-07-2026: bugfix critici + migrazione Gemma 4 31B + CyberEyeView lerp/LISTENING/event pulse + verifica FASE 8B + analisi Khoj e ComfyUI.**
+**Sessione 05-07-2026 (mattina + pomeriggio): completato Settings Avanzate (modello AI), OpenRouter backend, redesign CyberEyeView orb (guscio vitreo + fulmini tapered).**
 
 ### FASE 8B + 8C ✅ (completate sessione 26-06-2026 mattina)
 - `flight_finder`: cerca voli, deep link Google Flights + Skyscanner, 40+ città IATA, parser date italiano
@@ -50,9 +50,9 @@ L'AI si chiama **Ari**. Stack: Swift (UI/notch/voce) + Python (brain/MLX/memoria
 
 ## Prossime priorità
 
-1. **mlx-embeddings + nomic-embed-text** — dense retrieval reale per Memoria v2 (BM25+dense già preparato in memory_store.py, manca il modello; pattern da Khoj)
-2. **Job Scheduler / Automations** — cron-like per proattività aumentata: query periodiche, report schedulati, watch eventi (pattern da Khoj)
-3. **`image_gen` skill** — wrapper REST su ComfyUI locale: comando vocale → workflow JSON → immagine su GPU (filosofia offline-first compatibile)
+1. **Widget grafo 3D del brain** — finestra NSPanel con grafo 3D dei nodi memoria (networkx → JSON → WKWebView Three.js force-directed graph)
+2. **mlx-embeddings + nomic-embed-text** — dense retrieval reale per Memoria v2 (BM25+dense già preparato in memory_store.py, manca il modello)
+3. **Emotional scoring sulla memoria** — `emotional_score` su memory_store.py (neutral/positive/negative/urgent), weighting retrieval
 
 ---
 
@@ -139,7 +139,7 @@ Cinque repo analizzati come riferimento permanente (salvati in memory):
 Nessuno.
 
 ## Ultimo aggiornamento
-03-07-2026 - 22:56
+05-07-2026 - 10:21
 
 ## Changelog
 - 14-06-2026 15:23: Sessione progettazione completa — IdeasProject/ creato (16 doc, 34 decisioni), stack MLX confermato, nome AI = Ari, due modalità UI (notch + chat), roadmap 10 fasi definita
@@ -155,3 +155,5 @@ Nessuno.
 - 26-06-2026 23:32: Sessione orb JARVIS — CyberEyeView riscritto 3× (HUD anelli → plasma swirls → sfera elettrica con lightning). Versione finale: lightning bolts zigzag+ramificazioni (plusLighter), 28 surface sparks con spike, swirl plasma morbidi, nucleo bianco. Orb panel reso trasparente (nessun rettangolo visibile). Speaker verification: brain/speaker_verifier.py MFCC 120-dim cosine>0.82, integrato in stt.py pre-Whisper, enrollment via WebSocket voice_enroll.
 - 27-06-2026: Sessione auto-conoscenza — Memoria v2 upgraded (DiGraph networkx, BM25+TF-IDF+RRF 5-query, contradiction detection, gap detection, confidence decay, LLM episode summary). MemoryPanel v2 Swift (gap section, color-coded relations). FASE 6 upgrade (YOLO+supervision structured screen analysis). Orb WebGL → stella supergigante azzurra Three.js/GLSL + fake bloom + orbital particles GPU-side → implementato in Swift via WKWebView. constitution/ari.md riscritto con self-knowledge completo (21 tool, architettura Swift+Python, procedura self-modify, limitazioni). constitution/local_ai_ecosystem.md creato (analisi awesome-local-ai: upgrade prioritizzati per retrieval semantico, TTS, modelli).
 - 03-07-2026 22:56: Bugfix critici (TTS deadlock lock/proc.wait separati, SAVE_TO strippato prima di TTS, @app.on_event → lifespan asynccontextmanager). Migrazione modello primario Qwen3-14B → Gemma 4 31B-it via mlx-vlm (testo+vision in un modello, -7GB RAM). CyberEyeView: lerp RGB per transizioni fluide (0.55s), LISTENING state con radar rings, event pulse memory_save/contradiction. Verifica FASE 8B: flight_finder e game_updater confermati operativi su API reali. Analisi Khoj (hybrid search + job scheduler) e ComfyUI (image_gen via REST) — pattern aggiunti a roadmap.
+- 05-07-2026 09:44: Fix GPU stream error "no stream gpu 3" (root cause: MLX Metal streams thread-local, fix: ThreadPoolExecutor(max_workers=1) in llm.py per caricamento+generazione sullo stesso thread). Fix orb offline (waitForHealth 30→60 tentativi, WebSocketManager.connect() cancella task precedente). Fix notch mode switch (orderFrontRegardless). YOLO monkeypatch torch.backends.mps.is_available=False. Sistema approvazione 3 livelli completo (ApprovalBanner Nega/Consenti/Consenti sempre, ws_handler approval_future, Swift handler). DynamicNotchKit SPM + AriNotchNotifier. Skill Obsidian/Calendar/Mail. Heartbeat proattivo. Cognitive 4-layer: ActionExecutor (approval+retry centralizzati, LLM non esegue azioni direttamente). Spark system: SparkStore SQLite (~/.ari/sparks.db) per cooldown e rate limit persistenti. Analisi moeru-ai/airi (41k⭐): VAD Silero, Beat Sync fisico, 4-layer Minecraft agent, expression blend modes, wLipSync.
+- 05-07-2026 10:21: Settings Avanzate — sezione MODELLO AI completa: status dot Combine live, segmented backend Locale MLX/OpenRouter, NSPopUpButton 5 preset MLX, campi model ID + API key OpenRouter, pulsanti Cambia/Riavvia/Riscarica, wrapScrollable() per contenuto scrollabile. llm.py: switch_to(), reload(), redownload() (cancella cache HF), _stream_openrouter() httpx async, routing stream() per backend. ws_handler.py: handler model_switch/model_reload/model_redownload. CyberEyeView redesign: layer order (lightning PRIMA del guscio → fulmini intrappolati), drawVitreousShell() con Fresnel limb darkening + speculare primario + caustic, drawSphereBody() gradiente non-lineare 6 stop, drawBolt() tapered (radice 2.8pt → punta 0.6pt), jitter scalato con progress (0 al centro → max alla punta), ramo secondario tapered più sottile.

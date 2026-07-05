@@ -185,6 +185,22 @@ async def handle_ws(ws: WebSocket):
                 verifier.enabled = msg.get("enabled", True)
                 log.info(f"speaker verification: {verifier.enabled}")
 
+            elif msg_type == "model_switch":
+                model_id = msg.get("model_id", "")
+                backend  = msg.get("backend", "mlx")
+                api_key  = msg.get("api_key", "")
+                if model_id:
+                    await manager.send({"type": "model_loading"})
+                    engine.switch_to(model_id, backend, api_key)
+
+            elif msg_type == "model_reload":
+                await manager.send({"type": "model_loading"})
+                engine.reload()
+
+            elif msg_type == "model_redownload":
+                await manager.send({"type": "model_loading"})
+                engine.redownload()
+
             else:
                 log.warning(f"messaggio sconosciuto: {msg_type}")
 

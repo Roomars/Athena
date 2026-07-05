@@ -88,8 +88,11 @@ struct CyberEyeView: View {
             drawSphereBody(ctx: inner, cx: cx, cy: cy, r: r, t: t, col: col, bri: bri)
             drawEnergySwirls(ctx: inner, cx: cx, cy: cy, r: r, t: t,
                              col: col, bri: bri, rotSpeed: rotSpeed)
+            // Fulmini prima del guscio — appaiono intrappolati dentro la sfera
             drawLightning(ctx: inner, cx: cx, cy: cy, r: r, t: t,
                           col: col, bri: bri, rotSpeed: rotSpeed)
+            // Guscio vitreo SOPRA i fulmini (Fresnel + speculare)
+            drawVitreousShell(ctx: inner, cx: cx, cy: cy, r: r, t: t, col: col, bri: bri)
             drawInnerGlow(ctx: inner, cx: cx, cy: cy, r: r, t: t, col: col, bri: bri)
             if state == .speaking || (prevState == .speaking && lerpT < 1) {
                 drawWaveformRing(ctx: inner, cx: cx, cy: cy, r: r, t: t,
@@ -129,28 +132,24 @@ struct CyberEyeView: View {
                                        startRadius: r * 0.50, endRadius: hR))
     }
 
-    // MARK: - Sphere body
+    // MARK: - Sphere body (attenuazione non-lineare — guscio denso)
 
     private func drawSphereBody(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat,
                                  r: CGFloat, t: Double, col: Color, bri: CGFloat) {
         let rect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
+        // Stop addensati verso il centro: la sfera appare piena, non cava.
+        // Curve quadratica simulata con 6 stop — opacity decade come (1-x)².
         let g = Gradient(stops: [
-            .init(color: Color.white.opacity(0.90),                               location: 0.00),
-            .init(color: Color(red: 0.75, green: 0.95, blue: 1.00).opacity(0.85), location: 0.08),
-            .init(color: col.opacity(0.78 * bri),                                 location: 0.30),
-            .init(color: col.opacity(0.45 * bri),                                 location: 0.58),
-            .init(color: col.opacity(0.15 * bri),                                 location: 0.83),
-            .init(color: Color.clear,                                              location: 1.00),
+            .init(color: col.opacity(0.92 * bri), location: 0.00),
+            .init(color: col.opacity(0.88 * bri), location: 0.20),
+            .init(color: col.opacity(0.78 * bri), location: 0.42),
+            .init(color: col.opacity(0.52 * bri), location: 0.62),
+            .init(color: col.opacity(0.18 * bri), location: 0.82),
+            .init(color: Color.clear,             location: 1.00),
         ])
         ctx.fill(Path(ellipseIn: rect),
                  with: .radialGradient(g, center: CGPoint(x: cx, y: cy),
                                        startRadius: 0, endRadius: r))
-        let hlR = r * 0.42; let hlX = cx - r * 0.27; let hlY = cy - r * 0.28
-        ctx.fill(
-            Path(ellipseIn: CGRect(x: hlX - hlR, y: hlY - hlR, width: hlR * 2, height: hlR * 2)),
-            with: .radialGradient(
-                Gradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0)]),
-                center: CGPoint(x: hlX, y: hlY), startRadius: 0, endRadius: hlR))
     }
 
     // MARK: - Energy swirls
@@ -204,41 +203,115 @@ struct CyberEyeView: View {
     private func drawBolt(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat,
                            r: CGFloat, t: Double, baseAngle: Double,
                            seed: Double, alpha: CGFloat, branch: Bool, col: Color) {
-        let segments = 7
-        let innerR   = r * 0.06
-        let outerR   = r * (0.68 + 0.12 * sin(seed * 2.1 + t * 0.4))
-        let maxDev   = r * 0.18
+        let segments = 8
+        let innerR   = r * 0.07
+        let outerR   = r * (0.70 + 0.14 * sin(seed * 2.1 + t * 0.4))
+        let maxDev   = r * 0.22   // ampiezza massima zigzag alla punta
+
         var pts: [CGPoint] = []
         for j in 0...segments {
             let progress  = Double(j) / Double(segments)
             let rr        = innerR + (outerR - innerR) * CGFloat(progress)
-            let jitter    = maxDev * CGFloat(sin(seed * 3.14 + Double(j) * 1.3 + t * 11.0))
+            // Jitter = 0 alla radice, scala con la distanza dal centro
+            let jitter    = maxDev * CGFloat(progress) *
+                            CGFloat(sin(seed * 3.14 + Double(j) * 1.5 + t * 11.5))
             let perpAngle = baseAngle + .pi / 2
             pts.append(CGPoint(
                 x: cx + rr * CGFloat(cos(baseAngle)) + jitter * CGFloat(cos(perpAngle)),
                 y: cy + rr * CGFloat(sin(baseAngle)) + jitter * CGFloat(sin(perpAngle))
             ))
         }
-        var path = Path(); path.move(to: pts[0])
-        for pt in pts.dropFirst() { path.addLine(to: pt) }
-        ctx.stroke(path, with: .color(col.opacity(0.18 * alpha)),
-                   style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round))
-        ctx.stroke(path, with: .color(col.opacity(0.55 * alpha)),
-                   style: StrokeStyle(lineWidth: 2.8, lineCap: .round, lineJoin: .round))
-        ctx.stroke(path, with: .color(Color.white.opacity(0.75 * alpha)),
-                   style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
-        if branch, pts.count > 4 {
-            let bSeed = seed + 7.3
-            let bx = pts[3].x + r * 0.28 * CGFloat(cos(baseAngle + .pi / 5.5))
-                   + CGFloat(sin(bSeed * 2 + t * 9.0)) * r * 0.08
-            let by = pts[3].y + r * 0.28 * CGFloat(sin(baseAngle + .pi / 5.5))
-                   + CGFloat(cos(bSeed * 2 + t * 9.0)) * r * 0.08
-            var bp = Path(); bp.move(to: pts[3]); bp.addLine(to: CGPoint(x: bx, y: by))
-            ctx.stroke(bp, with: .color(col.opacity(0.35 * alpha)),
-                       style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-            ctx.stroke(bp, with: .color(Color.white.opacity(0.45 * alpha)),
-                       style: StrokeStyle(lineWidth: 0.6, lineCap: .round))
+
+        // Tre passate per ogni segmento — spessore che si assottiglia dalla radice alla punta
+        let rootW: CGFloat = 2.8   // 2.5-3.0 pt alla radice
+        let tipW:  CGFloat = 0.6   // 0.5-1.0 pt alla punta
+
+        for j in 0..<(pts.count - 1) {
+            let prog = CGFloat(j) / CGFloat(pts.count - 1)
+            let lw   = rootW + (tipW - rootW) * prog
+            var seg  = Path(); seg.move(to: pts[j]); seg.addLine(to: pts[j + 1])
+            // Glow morbido
+            ctx.stroke(seg, with: .color(col.opacity(0.14 * alpha)),
+                       style: StrokeStyle(lineWidth: lw * 5.0, lineCap: .round))
+            // Corpo colorato
+            ctx.stroke(seg, with: .color(col.opacity(0.60 * alpha)),
+                       style: StrokeStyle(lineWidth: lw, lineCap: .round))
+            // Core bianco brillante
+            ctx.stroke(seg, with: .color(Color.white.opacity(0.82 * alpha)),
+                       style: StrokeStyle(lineWidth: max(0.4, lw * 0.40), lineCap: .round))
         }
+
+        // Ramo secondario (~40% della lunghezza principale)
+        if branch, pts.count > 4 {
+            let bIdx  = pts.count * 2 / 5
+            let bSeed = seed + 7.3
+            let bAngle = baseAngle + .pi / 5.0 + sin(bSeed) * 0.35
+            let bLen   = r * (0.20 + 0.10 * sin(bSeed * 1.7))
+            let bSegs  = 4
+            var bpts: [CGPoint] = [pts[bIdx]]
+            for j in 1...bSegs {
+                let prog = Double(j) / Double(bSegs)
+                let jit  = r * 0.07 * CGFloat(prog) * CGFloat(sin(bSeed * 2 + Double(j) + t * 9.0))
+                let perp = bAngle + .pi / 2
+                bpts.append(CGPoint(
+                    x: bpts[j - 1].x + (bLen / CGFloat(bSegs)) * CGFloat(cos(bAngle))
+                       + jit * CGFloat(cos(perp)),
+                    y: bpts[j - 1].y + (bLen / CGFloat(bSegs)) * CGFloat(sin(bAngle))
+                       + jit * CGFloat(sin(perp))
+                ))
+            }
+            let bRootW: CGFloat = 1.4; let bTipW: CGFloat = 0.35
+            for j in 0..<(bpts.count - 1) {
+                let prog = CGFloat(j) / CGFloat(bpts.count - 1)
+                let lw   = bRootW + (bTipW - bRootW) * prog
+                var seg  = Path(); seg.move(to: bpts[j]); seg.addLine(to: bpts[j + 1])
+                ctx.stroke(seg, with: .color(col.opacity(0.38 * alpha)),
+                           style: StrokeStyle(lineWidth: lw + 2.5, lineCap: .round))
+                ctx.stroke(seg, with: .color(Color.white.opacity(0.52 * alpha)),
+                           style: StrokeStyle(lineWidth: max(0.3, lw * 0.50), lineCap: .round))
+            }
+        }
+    }
+
+    // MARK: - Vitreous shell (guscio vitreo sopra i fulmini)
+
+    private func drawVitreousShell(ctx: GraphicsContext, cx: CGFloat, cy: CGFloat,
+                                    r: CGFloat, t: Double, col: Color, bri: CGFloat) {
+        let rect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
+
+        // Fresnel / limb darkening: bordo scuro che simula rifrazione del vetro
+        let fresnelG = Gradient(stops: [
+            .init(color: Color.clear,                     location: 0.00),
+            .init(color: Color.clear,                     location: 0.62),
+            .init(color: col.opacity(0.06 * bri),         location: 0.80),
+            .init(color: Color.black.opacity(0.42),       location: 0.93),
+            .init(color: Color.black.opacity(0.65),       location: 1.00),
+        ])
+        ctx.fill(Path(ellipseIn: rect),
+                 with: .radialGradient(fresnelG, center: CGPoint(x: cx, y: cy),
+                                       startRadius: 0, endRadius: r))
+
+        // Speculare primario — riflesso luce in alto a sinistra
+        let hlX = cx - r * 0.28; let hlY = cy - r * 0.30
+        let hlR = r * 0.40
+        let specG = Gradient(stops: [
+            .init(color: Color.white.opacity(0.30), location: 0.00),
+            .init(color: Color.white.opacity(0.10), location: 0.55),
+            .init(color: Color.clear,               location: 1.00),
+        ])
+        ctx.fill(
+            Path(ellipseIn: CGRect(x: hlX - hlR, y: hlY - hlR, width: hlR * 2, height: hlR * 2)),
+            with: .radialGradient(specG, center: CGPoint(x: hlX, y: hlY),
+                                   startRadius: 0, endRadius: hlR))
+
+        // Speculare secondario — piccolo punto brillante (caustic)
+        let s2X = cx - r * 0.16; let s2Y = cy - r * 0.44
+        let s2R = r * 0.09
+        ctx.fill(
+            Path(ellipseIn: CGRect(x: s2X - s2R, y: s2Y - s2R, width: s2R * 2, height: s2R * 2)),
+            with: .radialGradient(
+                Gradient(colors: [Color.white.opacity(0.60), Color.clear]),
+                center: CGPoint(x: s2X, y: s2Y), startRadius: 0, endRadius: s2R))
     }
 
     // MARK: - Inner glow

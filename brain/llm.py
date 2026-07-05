@@ -24,6 +24,10 @@ class LLMEngine:
         # Thread singolo persistente: MLX Metal streams sono thread-local.
         # Caricare e generare nello stesso thread evita "no stream gpu N".
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
+        # Backend: "mlx" | "openrouter"
+        self._backend:         str       = "mlx"
+        self._openrouter_key:  str | None = None
+        self._openrouter_model: str | None = None
 
     # ------------------------------------------------------------------
     # Caricamento
@@ -103,6 +107,90 @@ class LLMEngine:
     # Generazione streaming (text-only)
     # ------------------------------------------------------------------
 
+    def switch_to(self, model_id: str, backend: str, api_key: str = "") -> None:
+        """Cambia backend/modello. Per MLX ricarica il modello sull'executor."""
+        self._backend = backend
+        if backend == "openrouter":
+            self._openrouter_model = model_id
+            self._openrouter_key   = api_key or None
+            log.info(f"backend → openrouter, model={model_id}")
+            for cb in self.on_ready:
+                cb(model_id)
+        else:
+            self._backend = "mlx"
+            self.load_async(model_id)
+
+    def reload(self) -> None:
+        """Ricarica il modello MLX corrente."""
+        if self._backend == "mlx" and self._model_id:
+            self.load_async(self._model_id)
+
+    def redownload(self) -> None:
+        """Cancella il modello MLX dalla cache HF e lo riscarica."""
+        if self._backend != "mlx" or not self._model_id:
+            return
+        model_id = self._model_id
+
+        def _delete_and_reload():
+            import shutil
+            from pathlib import Path
+            hf_home = Path.home() / ".cache" / "huggingface" / "hub"
+            slug = "models--" + model_id.replace("/", "--")
+            target = hf_home / slug
+            if target.exists():
+                shutil.rmtree(target)
+                log.info(f"cancellata cache: {target}")
+            import os
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            self.load_async(model_id)
+
+        self._executor.submit(_delete_and_reload)
+
+    async def _stream_openrouter(
+        self,
+        messages: list[dict],
+        max_tokens: int,
+    ) -> AsyncGenerator[tuple[str, str], None]:
+        """Stream via OpenRouter (API OpenAI-compatibile)."""
+        import httpx
+        model = self._openrouter_model or "openai/gpt-4o-mini"
+        key   = self._openrouter_key or ""
+        url   = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization":      f"Bearer {key}",
+            "Content-Type":       "application/json",
+            "HTTP-Referer":       "https://ari.local",
+            "X-Title":            "Ari",
+        }
+        body = {
+            "model":       model,
+            "messages":    messages,
+            "max_tokens":  max_tokens,
+            "stream":      True,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                async with client.stream("POST", url, headers=headers, json=body) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:].strip()
+                        if data == "[DONE]":
+                            break
+                        import json
+                        try:
+                            obj = json.loads(data)
+                            token = obj["choices"][0]["delta"].get("content", "")
+                            if token:
+                                yield ("chunk", token)
+                        except Exception:
+                            pass
+        except Exception as e:
+            log.error(f"errore openrouter: {e}")
+            yield ("chunk", f"[errore OpenRouter: {e}]")
+        yield ("done", "")
+
     async def stream(
         self,
         messages: list[dict],
@@ -115,6 +203,11 @@ class LLMEngine:
           ("chunk", token)   — token visibile
           ("done", "")       — generazione completata
         """
+        if self._backend == "openrouter":
+            async for item in self._stream_openrouter(messages, max_tokens):
+                yield item
+            return
+
         if not self.is_ready:
             yield ("chunk", "Sto caricando il modello, un momento...")
             yield ("done", "")
