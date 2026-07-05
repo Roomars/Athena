@@ -13,17 +13,21 @@ from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
 from . import vision
 from . import self_modify
+from .cognitive import ActionExecutor
 from .self_modify_agent import (
     generate_skill, build_init_update,
     classify_request, generate_swift_change, generate_personality_change,
 )
 
-_pending_mod:      dict | None = None   # proposta in attesa di conferma utente
-_pending_build:    dict | None = None   # modifica applicata, in attesa del build Swift
-_approval_future:  asyncio.Future | None = None   # attesa approvazione tool
-_always_allowed:   set[str] = set()               # whitelist "Consenti sempre"
+_pending_mod:      dict | None = None
+_pending_build:    dict | None = None
+_approval_future:  asyncio.Future | None = None
+_always_allowed:   set[str] = set()
 
 log = logging.getLogger("ws")
+
+# Layer 4 — Azione: istanziato a modulo-load, wired dopo che _request_tool_approval è definita
+_action_executor: "ActionExecutor | None" = None
 
 
 class ConnectionManager:
@@ -64,6 +68,12 @@ async def _notify_tts_done():
 
 
 async def handle_ws(ws: WebSocket):
+    global _action_executor
+    if _action_executor is None:
+        _action_executor = ActionExecutor(
+            approval_fn=_request_tool_approval,
+            always_allowed=_always_allowed,
+        )
     tts.set_loop(asyncio.get_event_loop())
     tts.set_done_callback(_notify_tts_done)
     await manager.connect(ws)
@@ -268,38 +278,38 @@ async def _respond(user_input: str):
 
     working_memory.add("user", user_input)
 
-    # Skill routing — eseguito prima dell'LLM, risultato iniettato nel system prompt
+    # Layer 2 — Riflesso: skill routing pre-LLM, risultato iniettato nel system prompt
     skill_context = ""
     match = skill_router.route(user_input)
     if match:
         skill, params = match
-        # Screen vision: chiede a Swift di catturare lo schermo
+
+        # Cortocircuiti speciali (non delegati all'ActionExecutor)
         if skill.name == "screen_vision":
             await manager.send({"type": "capture_screen", "prompt": user_input})
             await manager.send({"type": "orb_state", "state": "listening"})
             return
-        # Self-modify: genera codice e invia proposta di modifica
         if skill.name == "self_modify":
             await _handle_self_modify(user_input)
             return
-        # Computer control: messaggio intermedio visibile prima dell'attesa VLM
+
+        # Messaggio intermedio per operazioni lente (click VLM-driven)
         if skill.name == "computer_control" and params.get("action") in ("click", "double_click"):
             await manager.send({"type": "response_chunk",
                                 "content": "Guardo lo schermo...", "stream": True})
-        # Skill pericolose: chiedi approvazione prima di eseguire
-        if getattr(skill, "need_approval", False):
-            approved = await _request_tool_approval(skill.name, user_input[:120])
-            if not approved:
-                await manager.send({"type": "response_chunk",
-                                    "content": "Azione annullata.", "stream": False})
-                await manager.send({"type": "response_done", "state": "idle"})
-                return
 
-        try:
-            skill_context = await skill.run(user_input, params)
-            log.info(f"skill '{skill.name}' completata: {skill_context[:80]}")
-        except Exception as e:
-            log.error(f"skill '{skill.name}' errore: {e}")
+        # Layer 4 — Azione: esecuzione via ActionExecutor (approvazione + retry)
+        result = await _action_executor.execute(
+            skill, user_input, params,
+            require_approval=getattr(skill, "need_approval", False),
+        )
+        if result is None:
+            # Approvazione negata
+            await manager.send({"type": "response_chunk",
+                                "content": "Azione annullata.", "stream": False})
+            await manager.send({"type": "response_done", "state": "idle"})
+            return
+        skill_context = result
 
     system = build_system_prompt(query=user_input)
     if skill_context:
