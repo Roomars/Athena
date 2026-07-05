@@ -66,12 +66,19 @@ app = FastAPI(title="Ari Brain", version="0.2.0", lifespan=lifespan)
 @app.get("/health")
 async def health():
     return JSONResponse({
-        "status": "ok",
-        "version": "0.2.0",
-        "fase": 2,
-        "model": engine.model_id,
+        "status":      "ok",
+        "version":     "0.2.0",
+        "fase":        2,
+        "model":       engine.model_id,
         "model_ready": engine.is_ready,
+        "mlx_memory":  engine.memory_stats(),
     })
+
+
+@app.get("/memory")
+async def memory_report():
+    """Snapshot RAM MLX: active / peak / cache in GB."""
+    return JSONResponse(engine.memory_stats())
 
 
 @app.websocket("/ws")

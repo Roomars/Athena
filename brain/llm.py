@@ -52,6 +52,17 @@ class LLMEngine:
                     self._config    = config
                     self._model_id  = model_id
                     self._loading   = False
+
+                    # Limita la Metal cache a 3 GB — senza limite cresce
+                    # senza controllo tra generazioni successive.
+                    try:
+                        import mlx.core as mx
+                        mx.metal.set_cache_limit(3 * 1024 ** 3)
+                        peak = mx.metal.get_active_memory() / 1024 ** 3
+                        log.info(f"MLX active memory dopo load: {peak:.1f} GB")
+                    except Exception:
+                        pass
+
                     log.info(f"modello pronto: {model_id}")
                     for cb in self.on_ready:
                         cb(model_id)
@@ -169,6 +180,15 @@ class LLMEngine:
                 log.error(f"errore generazione: {e}")
                 loop.call_soon_threadsafe(queue.put_nowait, ("chunk", f"[errore: {e}]"))
             finally:
+                # Libera Metal cache accumulata durante la generazione.
+                # Senza questa chiamata i buffer non vengono rilasciati tra una risposta e l'altra.
+                try:
+                    import mlx.core as mx
+                    import gc
+                    mx.metal.clear_cache()
+                    gc.collect()
+                except Exception:
+                    pass
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", ""))
 
         self._executor.submit(_generate)
@@ -194,13 +214,34 @@ class LLMEngine:
             formatted = apply_chat_template(
                 self._processor, self._config, prompt, num_images=1
             )
-            return generate(
+            result = generate(
                 self._model, self._processor, image_pil, formatted,
                 max_tokens=max_tokens, verbose=False,
             ).strip()
+            return result
         except Exception as e:
             log.error(f"errore generazione vision: {e}")
             return f"Errore durante l'analisi: {e}"
+        finally:
+            try:
+                import mlx.core as mx
+                import gc
+                mx.metal.clear_cache()
+                gc.collect()
+            except Exception:
+                pass
+
+    def memory_stats(self) -> dict:
+        """Ritorna statistiche memoria MLX correnti (GB)."""
+        try:
+            import mlx.core as mx
+            return {
+                "active_gb":   round(mx.metal.get_active_memory()   / 1024 ** 3, 2),
+                "peak_gb":     round(mx.metal.get_peak_memory()     / 1024 ** 3, 2),
+                "cache_gb":    round(mx.metal.get_cache_memory()    / 1024 ** 3, 2),
+            }
+        except Exception:
+            return {}
 
 
 engine = LLMEngine()
