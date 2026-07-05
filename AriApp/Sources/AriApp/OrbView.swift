@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct OrbView: View {
+    @ObservedObject private var wm = WebSocketManager.shared
+
     var body: some View {
-        let wm = WebSocketManager.shared
         let lbl = stateLabel(wm: wm)
 
         GeometryReader { geo in

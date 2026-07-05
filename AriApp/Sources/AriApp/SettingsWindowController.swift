@@ -433,6 +433,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stk.addArrangedSubview(separator())
         stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
 
+        stk.addArrangedSubview(sectionHeader("BRAIN"))
+        stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
+
+        let restartBtn = NSButton(title: "Riavvia brain", target: self, action: #selector(restartBrain))
+        restartBtn.bezelStyle = .rounded
+        stk.addArrangedSubview(row(label: "Processo Python",
+                                   detail: "Ferma e rilancia il daemon (utile dopo aggiornamenti)",
+                                   control: restartBtn))
+        stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
+        stk.addArrangedSubview(separator())
+        stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
+
         stk.addArrangedSubview(sectionHeader("DIAGNOSTICA"))
         stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
 
@@ -673,6 +685,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         SettingsManager.shared.settings.autoHideDelay = v
         SettingsManager.shared.save()
         autoHideDelayLabel.stringValue = "\(Int(v))s"
+    }
+
+    @objc private func restartBrain() {
+        DaemonManager.shared.stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            DaemonManager.shared.start()
+        }
     }
 
     @objc private func openLogs() {
