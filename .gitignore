@@ -16,9 +16,14 @@ build/
 xcuserdata/
 DerivedData/
 
-# macOS
+# macOS / IDE
 .DS_Store
 *.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
 
 # Logs e diagnostics (non in git)
 logs/
@@ -33,3 +38,43 @@ data/*.db
 
 # Settings con segreti
 # settings.json è in ~/Library, non nel repo — ok
+
+# Claude Code: locale/personale, non condiviso tra le macchine
+.claude/settings.local.json
+.claude/worktrees/
+
+# ─── Ambiente e segreti ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# ─── ProjectMaster: stato effimero e output temporanei ────────
+ProjectMaster/orchestration/state/.last-test-run.log
+ProjectMaster/orchestration/state/.retry-*.log
+ProjectMaster/orchestration/state/ephemeral.md
+ProjectMaster/diagnostics/*.json
+ProjectMaster/orchestration/glm-output/
+
+# ─── Cosa TENERE in git (override espliciti) ───────────────────
+!ProjectMaster/orchestration/state/journal.md
+!ProjectMaster/orchestration/state/canonical.md
+!ProjectMaster/orchestration/state.json
+!ProjectMaster/diagnostics/README.md
+!ProjectMaster/diagnostics/resolved/
+
+# ─── Test coverage e cache ───────────────────────────────────
+coverage/
+.nyc_output/
+.pytest_cache/
+.mypy_cache/
+*.lcov
+
+# ─── Dev server / build output (se presenti in sottoprogetti) ─
+node_modules/
+.next/
+.nuxt/
+out/
+.output/
