@@ -12,7 +12,7 @@ let package = Package(
             name: "AriApp",
             dependencies: ["DynamicNotchKit"],
             path: "Sources/AriApp",
-            resources: [.copy("orb.html")]
+            resources: [.copy("orb.html"), .copy("memory_graph.html")]
         ),
     ]
 )

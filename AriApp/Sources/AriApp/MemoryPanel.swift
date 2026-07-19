@@ -1,8 +1,19 @@
 import AppKit
+import WebKit
 
 // MemoryPanel v2 — pannello grande dedicato alla memoria di Ari.
-// Layout: header (search + stats) | colonna sinistra (fatti) | colonna destra (episodi)
+// Layout: header (search + stats + mode toggle) | corpo (lista a due colonne OPPURE sfera 3D)
 // Fatti mostrati come card con key, value, tags, confidence bar, relazioni.
+
+// Handler per i messaggi JS → Swift (click su nodo del grafo)
+private final class MemoryNodeClickHandler: NSObject, WKScriptMessageHandler {
+    weak var panel: MemoryPanel?
+    func userContentController(_ ucc: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let nodeId = message.body as? String else { return }
+        panel?.handleNodeClick(nodeId: nodeId)
+    }
+}
 
 final class MemoryPanel {
     static let shared = MemoryPanel()
@@ -12,6 +23,12 @@ final class MemoryPanel {
     private var episodesView:  NSTextView?
     private var searchField:   NSTextField?
     private var statsLabel:    NSTextField?
+
+    // Vista 3D
+    private var graphWebView:  WKWebView?
+    private var modeSegment:   NSSegmentedControl?
+    private var listViews:     [NSView] = []          // scroll views + divider da hide/show
+    private lazy var nodeClickHandler = MemoryNodeClickHandler()
 
     // Dati correnti
     private var allFacts:    [[String: Any]] = []
@@ -103,6 +120,27 @@ final class MemoryPanel {
         vibrancy.addSubview(rightTV.enclosingScrollView!)
         episodesView = rightTV
 
+        // ── Vista 3D — WKWebView sovrapposta all'area corpo ──────────────────
+        nodeClickHandler.panel = self
+        let wkConfig = WKWebViewConfiguration()
+        wkConfig.userContentController.add(nodeClickHandler, name: "nodeClick")
+
+        let gw = WKWebView(frame: NSRect(x: 0, y: 28, width: W, height: bodyH),
+                           configuration: wkConfig)
+        gw.setValue(false, forKey: "drawsBackground")
+        gw.wantsLayer = true
+        gw.layer?.backgroundColor = .clear
+        gw.autoresizingMask = [.width, .height]
+        gw.isHidden = true
+        if let url = Bundle.module.url(forResource: "memory_graph", withExtension: "html") {
+            gw.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        }
+        vibrancy.addSubview(gw)
+        graphWebView = gw
+
+        // Viste lista da nascondere quando si passa alla vista 3D
+        listViews = [leftTV.enclosingScrollView!, rightTV.enclosingScrollView!, divider]
+
         // ── Footer ───────────────────────────────────────────────────────────
         let footer = buildFooter(width: W)
         vibrancy.addSubview(footer)
@@ -154,13 +192,27 @@ final class MemoryPanel {
         stats.font      = .monospacedSystemFont(ofSize: 9, weight: .regular)
         stats.textColor = NSColor.white.withAlphaComponent(0.35)
         stats.alignment = .right
-        stats.frame     = NSRect(x: width - 240, y: (height - 14) / 2, width: 160, height: 14)
+        stats.frame     = NSRect(x: width - 316, y: (height - 14) / 2, width: 118, height: 14)
         stats.autoresizingMask = [.minXMargin]
         bar.addSubview(stats)
         statsLabel = stats
 
+        // Segmented control Lista / Sfera 3D
+        let seg = NSSegmentedControl(
+            labels: ["Lista", "Sfera 3D"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(modeChanged(_:))
+        )
+        seg.selectedSegment  = 0
+        seg.font             = .systemFont(ofSize: 11)
+        seg.frame            = NSRect(x: width - 194, y: (height - 24) / 2, width: 112, height: 24)
+        seg.autoresizingMask = [.minXMargin]
+        bar.addSubview(seg)
+        modeSegment = seg
+
         // Refresh button
-        let btn = NSButton(frame: NSRect(x: width - 76, y: (height - 24) / 2, width: 70, height: 24))
+        let btn = NSButton(frame: NSRect(x: width - 78, y: (height - 24) / 2, width: 70, height: 24))
         btn.title      = "Aggiorna"
         btn.bezelStyle = .rounded
         btn.font       = .systemFont(ofSize: 11)
@@ -234,12 +286,57 @@ final class MemoryPanel {
                 self.renderFacts(filter: self.searchField?.stringValue ?? "")
                 self.renderEpisodes()
                 self.updateStats()
+                self.renderGraph3D()   // no-op se la vista 3D non è visibile
             }
         }
         WebSocketManager.shared.requestMemoryDump()
     }
 
     private func requestRefresh() { refresh() }
+
+    // MARK: - Mode switching (Lista ↔ Sfera 3D)
+
+    @objc private func modeChanged(_ seg: NSSegmentedControl) {
+        let is3D = seg.selectedSegment == 1
+        listViews.forEach { $0.isHidden = is3D }
+        graphWebView?.isHidden = !is3D
+        if is3D { renderGraph3D() }
+    }
+
+    // MARK: - 3D Graph
+
+    private func renderGraph3D() {
+        guard let gw = graphWebView, !gw.isHidden else { return }
+
+        guard !allGraph.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: allGraph,
+                                                    options: []) else {
+            gw.evaluateJavaScript(
+                "window.renderGraph && renderGraph('{\"nodes\":[],\"edges\":[]}')",
+                completionHandler: nil)
+            return
+        }
+        // Base64 + atob lato JS per evitare problemi di escaping con apici e newline
+        let b64 = data.base64EncodedString()
+        let js  = "window.renderGraph && renderGraph(atob('\(b64)'))"
+        gw.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    func handleNodeClick(nodeId: String) {
+        // Cerca il fatto corrispondente per id o key
+        let match = allFacts.first {
+            ($0["id"]  as? String == nodeId) ||
+            ($0["key"] as? String == nodeId)
+        }
+        let value = match?["value"] as? String ?? nodeId
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText     = nodeId
+            alert.informativeText = value
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+    }
 
     @objc private func searchChanged(_ sender: NSSearchField) {
         renderFacts(filter: sender.stringValue)
@@ -377,7 +474,7 @@ final class MemoryPanel {
         let nGap    = allFacts.count - nFacts
         let nRels   = allRelations.count
         let nEps    = allEpisodes.count
-        let nNodes  = (allGraph["nodes"] as? [String])?.count ?? 0
+        let nNodes  = (allGraph["nodes"] as? [[String: Any]])?.count ?? 0
         let nEdges  = (allGraph["edges"] as? [[String: Any]])?.count ?? 0
 
         var parts = ["\(nFacts) fatti", "\(nRels) rel", "\(nEps) ep"]

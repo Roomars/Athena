@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Ari Memory Graph</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
+#graph { width: 100%; height: 100%; }
+#empty {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: rgba(255,255,255,0.18); font: 700 11px/1 monospace; letter-spacing: 4px;
+  pointer-events: none; display: none;
+}
+#tooltip {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+  color: rgba(255,255,255,0.85); font: 400 11px/1.4 system-ui;
+  padding: 7px 12px; max-width: 420px; text-align: center;
+  pointer-events: none; display: none; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="empty">NESSUN NODO</div>
+<div id="tooltip" id="tt"></div>
+
+<script src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"></script>
+<script>
+// ── Palette (allineata a MemoryPanel.swift) ────────────────────────────────
+const KIND_COLOR = {
+  fact:    '#00D9FF',  // cyan  — rgba(0, 0.85, 1)
+  episode: '#FF991A', // orange — rgba(1, 0.60, 0.1)
+};
+const REL_COLOR = {
+  Contradicts: 'rgba(255,64,64,0.85)',
+  Supersedes:  'rgba(255,255,255,0.32)',
+  DerivedFrom: 'rgba(51,255,102,0.75)',
+  RelatesTo:   'rgba(140,46,255,0.75)',
+};
+const DEFAULT_NODE_COLOR = KIND_COLOR.fact;
+const DEFAULT_LINK_COLOR = REL_COLOR.RelatesTo;
+
+const R_SPHERE = 120; // raggio sfera target (unità three.js)
+
+// Distribuzione Fibonacci per posizioni iniziali sulla sfera
+function fibPos(total, i) {
+  if (total <= 1) return { x: 0, y: R_SPHERE, z: 0 };
+  const gr    = (1 + Math.sqrt(5)) / 2;
+  const theta = 2 * Math.PI * i / gr;
+  const phi   = Math.acos(1 - 2 * (i + 0.5) / total);
+  return {
+    x: Math.sin(phi) * Math.cos(theta) * R_SPHERE,
+    y: Math.sin(phi) * Math.sin(theta) * R_SPHERE,
+    z: Math.cos(phi) * R_SPHERE,
+  };
+}
+
+// ── Stato globale ──────────────────────────────────────────────────────────
+let Graph     = null;
+let lastData  = null;   // {nodes, links} passato alla libreria
+let ttTimer   = null;
+
+const elEmpty   = document.getElementById('empty');
+const elTooltip = document.getElementById('tooltip');
+
+function showTooltip(text) {
+  clearTimeout(ttTimer);
+  elTooltip.textContent = text;
+  elTooltip.style.display = 'block';
+  ttTimer = setTimeout(() => { elTooltip.style.display = 'none'; }, 4000);
+}
+
+// ── renderGraph — chiamato da Swift via evaluateJavaScript ─────────────────
+// Il payload arriva come base64(UTF-8) decodificato con atob() direttamente
+// nel chiamante JS: renderGraph(atob('...'))
+// oppure come stringa JSON raw.
+
+window.renderGraph = function(jsonString) {
+  let raw;
+  try { raw = JSON.parse(jsonString); } catch(e) {
+    console.error('renderGraph: JSON non valido', e);
+    return;
+  }
+
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
+  const rawEdges = Array.isArray(raw.edges) ? raw.edges : [];
+
+  elEmpty.style.display = rawNodes.length === 0 ? 'block' : 'none';
+
+  const n = rawNodes.length;
+
+  // Costruisci nodi con posizioni iniziali su sfera Fibonacci
+  const nodes = rawNodes.map((node, i) => {
+    const pos = fibPos(n, i);
+    return {
+      id:         String(node.id),
+      label:      node.label || String(node.id),
+      kind:       node.kind  || 'fact',
+      confidence: (node.confidence != null) ? Number(node.confidence) : 1.0,
+      x: pos.x, y: pos.y, z: pos.z,
+    };
+  });
+
+  const links = rawEdges.map(e => ({
+    source: String(e.from),
+    target: String(e.to),
+    rel:    e.rel || 'RelatesTo',
+  }));
+
+  lastData = { nodes, links };
+
+  if (!Graph) {
+    Graph = ForceGraph3D({ controlType: 'orbit' })(document.getElementById('graph'))
+      .backgroundColor('rgba(0,0,0,0)')
+      .showNavInfo(false)
+      // Nodo
+      .nodeLabel('')          // gestiamo noi il tooltip
+      .nodeColor(n  => KIND_COLOR[n.kind]  || DEFAULT_NODE_COLOR)
+      .nodeVal(n    => 0.8 + (n.confidence || 1) * 3.2)
+      .nodeOpacity(0.92)
+      .nodeResolution(12)
+      // Link
+      .linkColor(l  => REL_COLOR[l.rel]    || DEFAULT_LINK_COLOR)
+      .linkOpacity(0.45)
+      .linkWidth(0.6)
+      .linkDirectionalParticles(l => l.rel === 'Contradicts' ? 3 : 1)
+      .linkDirectionalParticleSpeed(0.005)
+      .linkDirectionalParticleWidth(0.9)
+      // Click su nodo → notifica Swift
+      .onNodeClick(node => {
+        showTooltip(node.label);
+        try {
+          window.webkit.messageHandlers.nodeClick.postMessage(String(node.id));
+        } catch(_) {
+          // Non siamo in WebKit (test browser) — silenzio
+        }
+      })
+      // Hover
+      .onNodeHover(node => {
+        document.body.style.cursor = node ? 'pointer' : 'default';
+        if (node) showTooltip(node.label);
+      });
+
+    // ── Forza radiale custom: mantiene i nodi sulla superficie della sfera ──
+    // Sovrascriviamo direttamente la velocità verso il punto di equilibrio.
+    Graph.d3Force('sphere', function sphereForce(alpha) {
+      if (!lastData) return;
+      lastData.nodes.forEach(node => {
+        const d = Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z);
+        if (d < 0.001) return;
+        const k = alpha * 1.0;
+        node.vx += ((node.x / d) * R_SPHERE - node.x) * k;
+        node.vy += ((node.y / d) * R_SPHERE - node.y) * k;
+        node.vz += ((node.z / d) * R_SPHERE - node.z) * k;
+      });
+    });
+
+    // Riduci la forza di repulsione ManyBody per non contrastare la sfera
+    const charge = Graph.d3Force('charge');
+    if (charge && typeof charge.strength === 'function') {
+      charge.strength(-80);
+    }
+  }
+
+  Graph.graphData({ nodes, links });
+};
+
+// Scena iniziale vuota (evita errori se Swift è lento a chiamare)
+window.renderGraph('{"nodes":[],"edges":[]}');
+</script>
+</body>
+</html>
