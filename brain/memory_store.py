@@ -278,7 +278,33 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def graph_snapshot(self) -> dict:
-        return _graph().to_dict()
+        """Snapshot del grafo arricchito con label/tipo/confidence per nodo
+        (usato da MemoryGraphView per la visualizzazione 3D)."""
+        snap = _graph().to_dict()
+        facts_by_key = {f["key"]: f for f in self.get_facts_full()}
+
+        nodes = []
+        for key in snap["nodes"]:
+            fact = facts_by_key.get(key)
+            if fact:
+                value = fact["value"] or ""
+                nodes.append({
+                    "id":         key,
+                    "label":      value[:60] + ("…" if len(value) > 60 else ""),
+                    "kind":       "fact",
+                    "confidence": fact.get("confidence") or 0.5,
+                })
+            else:
+                # nodo presente nel grafo ma senza fatto corrispondente
+                # (es. episodio, o fatto cancellato ma con relazioni residue)
+                nodes.append({
+                    "id":         key,
+                    "label":      key[:60],
+                    "kind":       "episode",
+                    "confidence": 0.5,
+                })
+
+        return {"nodes": nodes, "edges": snap["edges"]}
 
     def get_relations(self) -> list[dict]:
         rows = self._db.execute(
