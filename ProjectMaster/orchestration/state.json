@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "description": "Long-horizon state. Letto dall'Orchestratore a ogni avvio sessione. Aggiornato dopo ogni azione.",
+    "last_updated": null,
+    "machine": null,
+    "schema_version": "1.0"
+  },
+  "session": {
+    "active": false,
+    "started_at": null,
+    "objective": null,
+    "active_plan": null
+  },
+  "project": {
+    "name": null,
+    "phase": "init | development | testing | staging | production",
+    "last_stable_commit": null,
+    "knowledge_files_indexed": []
+  },
+  "progress": {
+    "completed_tasks": [],
+    "in_progress_task": null,
+    "blocked_tasks": [],
+    "pending_tasks": []
+  },
+  "last_action": {
+    "timestamp": "14-06-2026 12:57",
+    "agent": "glm-engine",
+    "action": "GLM call for task TEST",
+    "files_modified": [
+      "orchestration/glm-output/TEST-test.md"
+    ],
+    "outcome": "success",
+    "error_if_any": null
+  },
+  "self_correction": {
+    "active": false,
+    "current_retry": 0,
+    "max_retries": 3,
+    "last_error_log": null,
+    "report_path": null
+  },
+  "environment": {
+    "dev_server_running": false,
+    "dev_server_url": null,
+    "last_test_exit_code": null,
+    "last_build_exit_code": null
+  }
+}

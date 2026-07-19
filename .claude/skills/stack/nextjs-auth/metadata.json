@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "organization": "MisterLab",
+  "date": "21-05-2026",
+  "abstract": "Integrazione Supabase Auth con Next.js App Router — middleware, protected routes, session handling, SSR auth. Skill cross-cutting usata da frontend e backend."
+}

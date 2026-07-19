@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "organization": "MisterLab",
+  "date": "21-05-2026",
+  "abstract": "PWA — service worker, manifest, caching strategies (Cache-First, Network-First, Stale-While-Revalidate), install prompt, offline fallback. Affiancata alle spec MisterLab in manuale/pwa/."
+}

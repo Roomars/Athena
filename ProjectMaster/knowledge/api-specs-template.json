@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "description": "Specifiche API del progetto. Rinomina in api_specs.json e compila.",
+    "version": "1.0.0",
+    "base_url": "https://api.example.com/v1",
+    "auth": {
+      "type": "Bearer",
+      "header": "Authorization",
+      "token_endpoint": "/auth/token"
+    }
+  },
+  "endpoints": [
+    {
+      "id": "EP-01",
+      "method": "GET",
+      "path": "/resources",
+      "description": "Lista tutte le risorse",
+      "auth_required": true,
+      "query_params": [
+        { "name": "page", "type": "integer", "required": false, "default": 1 },
+        { "name": "limit", "type": "integer", "required": false, "default": 20 }
+      ],
+      "response": {
+        "200": {
+          "schema": {
+            "data": "array",
+            "total": "integer",
+            "page": "integer"
+          }
+        },
+        "401": { "description": "Non autenticato" },
+        "403": { "description": "Non autorizzato" }
+      }
+    },
+    {
+      "id": "EP-02",
+      "method": "POST",
+      "path": "/resources",
+      "description": "Crea una nuova risorsa",
+      "auth_required": true,
+      "body": {
+        "name": { "type": "string", "required": true, "max_length": 255 },
+        "description": { "type": "string", "required": false }
+      },
+      "response": {
+        "201": { "schema": { "id": "string", "name": "string", "created_at": "datetime" } },
+        "400": { "description": "Payload non valido" },
+        "409": { "description": "Risorsa già esistente" }
+      }
+    }
+  ],
+  "error_format": {
+    "error": "string",
+    "code": "string",
+    "details": "object | null"
+  }
+}

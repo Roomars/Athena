@@ -1,0 +1,94 @@
+{
+  "plan": {
+    "id": "AAAA-MM-DD-slug-descrittivo",
+    "created": "DD-MM-AAAA HH:mm",
+    "status": "draft | approved | in_progress | completed | cancelled",
+    "objective": "Descrizione sintetica dell'obiettivo",
+    "confirmed_by_user": false,
+    "knowledge_files_read": []
+  },
+  "token_budget": {
+    "strategy": "minimal-context",
+    "haiku_tasks": [],
+    "sonnet_tasks": [],
+    "opus_tasks": [],
+    "estimated_total_tokens": 0,
+    "context_per_agent": "Ogni agente riceve SOLO i file elencati nel suo task — niente di più"
+  },
+  "context": {
+    "directives_referenced": [],
+    "canonical_state_version": "",
+    "constraints": [],
+    "knowledge_snippets": {}
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "name": "Nome task",
+      "engine": "glm | claude",
+      "glm_provider": "nvidia | openrouter | zai",
+      "agent": "nome-agente",
+      "model": "z-ai/glm-5.1 | haiku | sonnet | opus",
+      "model_reason": "Perché questo engine/modello per questo task specifico",
+      "glm_prompt_file": "orchestration/glm-prompts/T01.md",
+      "glm_output_file": "orchestration/glm-output/T01-nome-agente.md",
+      "context_files": [
+        "Solo i file che questo agente deve leggere — non allegare l'intera codebase"
+      ],
+      "input": "Cosa riceve questo task",
+      "output": "Cosa produce (file, endpoint, schema, ecc.)",
+      "depends_on": [],
+      "parallel_with": [],
+      "estimated_minutes": 15,
+      "estimated_tokens": 500,
+      "self_correction": {
+        "enabled": true,
+        "command": "./execution/self-correct.sh '<test-cmd>' 'nome-agente' 'T01'",
+        "max_retries": 3
+      },
+      "status": "pending | in_progress | completed | failed",
+      "verification": "Come verificare che il task sia completato correttamente"
+    },
+    {
+      "id": "T02",
+      "name": "Nome task (logica custom — Claude)",
+      "engine": "claude",
+      "agent": "nome-agente",
+      "model": "sonnet",
+      "model_reason": "Logica business non delegabile a GLM",
+      "glm_prompt_file": null,
+      "glm_output_file": null,
+      "context_files": [],
+      "input": "",
+      "output": "",
+      "depends_on": ["T01"],
+      "parallel_with": [],
+      "estimated_minutes": 20,
+      "estimated_tokens": 8000,
+      "self_correction": {
+        "enabled": true,
+        "command": "./execution/self-correct.sh '<test-cmd>' 'nome-agente' 'T02'",
+        "max_retries": 3
+      },
+      "status": "pending",
+      "verification": ""
+    }
+  ],
+  "verification_loop": {
+    "boot_command": "./execution/context-boot.sh",
+    "health_check": "./execution/health-check.sh",
+    "build_command": "./execution/validate-build.sh",
+    "test_command": "./execution/run-tests.sh",
+    "preview_command": "./execution/start_dev.sh",
+    "expected_exit_code": 0,
+    "must_pass_before_close": true,
+    "self_correct_on_failure": true
+  },
+  "result": {
+    "completed_at": null,
+    "total_tokens_used": 0,
+    "files_modified": [],
+    "files_created": [],
+    "journal_entry": "Riferimento alla voce in orchestration/state/journal.md"
+  }
+}
