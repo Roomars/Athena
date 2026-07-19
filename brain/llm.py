@@ -6,10 +6,23 @@ from typing import AsyncGenerator
 
 log = logging.getLogger("llm")
 
-# Gemma 4 31B — testo + vision in un unico modello (mlx-vlm)
-MODEL_PRIMARY = "mlx-community/gemma-4-31b-it-4bit"
-MODEL_FAST    = "mlx-community/gemma-4-12b-it-4bit"   # già scaricato (vecchio vision)
-MODEL_HEAVY   = "mlx-community/gemma-4-31b-it-4bit"
+# Modello di default: testo-only, leggero (mlx-lm). La vision NON è più
+# sempre caricata: Gemma VLM viene ricaricato on-demand (vedi ensure_vision_ready).
+MODEL_PRIMARY = "mlx-community/Qwen3-14B-4bit"                 # testo-only (mlx-lm)
+MODEL_FAST    = "mlx-community/Llama-3.2-3B-Instruct-4bit"     # fallback leggero (mlx-lm)
+MODEL_HEAVY   = "mlx-community/gemma-4-31b-it-4bit"            # VLM — unico usato per vision
+
+# Registro modelli: quali preset sono vision-language (mlx-vlm) e quali
+# text-only (mlx-lm). Tutto ciò che non è qui è trattato come text-only.
+VLM_MODELS = {
+    "mlx-community/gemma-4-31b-it-4bit",
+    "mlx-community/gemma-4-12b-it-4bit",
+}
+
+
+def is_vlm(model_id: str | None) -> bool:
+    """True se il modello va caricato/generato con mlx-vlm (vision+testo)."""
+    return model_id in VLM_MODELS
 
 
 class LLMEngine:
@@ -18,6 +31,10 @@ class LLMEngine:
         self._processor = None
         self._config    = None
         self._model_id: str | None = None
+        # Modello scelto esplicitamente dall'utente (via Settings/switch_to).
+        # Distinto dal modello effettivamente caricato: la vision on-demand
+        # carica temporaneamente MODEL_HEAVY e poi torna a _preferred_id.
+        self._preferred_id: str = MODEL_PRIMARY
         self._loading = False
         self._lock    = threading.Lock()
         self.on_ready: list = []
@@ -41,16 +58,30 @@ class LLMEngine:
                 log.info(f"caricamento: {model_id}")
                 try:
                     import os
-                    from mlx_vlm import load
-                    from mlx_vlm.utils import load_config
                     os.environ.setdefault("HF_HUB_OFFLINE", "1")
-                    try:
-                        model, processor = load(model_id)
-                        config = load_config(model_id)
-                    except Exception:
-                        os.environ.pop("HF_HUB_OFFLINE", None)
-                        model, processor = load(model_id)
-                        config = load_config(model_id)
+
+                    if is_vlm(model_id):
+                        # Path VLM (invariato) — vision + testo via mlx-vlm
+                        from mlx_vlm import load
+                        from mlx_vlm.utils import load_config
+                        try:
+                            model, processor = load(model_id)
+                            config = load_config(model_id)
+                        except Exception:
+                            os.environ.pop("HF_HUB_OFFLINE", None)
+                            model, processor = load(model_id)
+                            config = load_config(model_id)
+                    else:
+                        # Path text-only via mlx-lm — processor = tokenizer,
+                        # config non usato (None).
+                        from mlx_lm import load as load_lm
+                        try:
+                            model, processor = load_lm(model_id)
+                        except Exception:
+                            os.environ.pop("HF_HUB_OFFLINE", None)
+                            model, processor = load_lm(model_id)
+                        config = None
+
                     self._model     = model
                     self._processor = processor
                     self._config    = config
@@ -107,8 +138,19 @@ class LLMEngine:
     # Generazione streaming (text-only)
     # ------------------------------------------------------------------
 
-    def switch_to(self, model_id: str, backend: str, api_key: str = "") -> None:
-        """Cambia backend/modello. Per MLX ricarica il modello sull'executor."""
+    def switch_to(
+        self,
+        model_id: str,
+        backend: str,
+        api_key: str = "",
+        update_preferred: bool = True,
+    ) -> None:
+        """Cambia backend/modello. Per MLX ricarica il modello sull'executor.
+
+        update_preferred: se True (switch iniziato dall'utente) aggiorna il
+        modello preferito. La vision on-demand usa False per non sovrascrivere
+        la scelta dell'utente quando carica temporaneamente MODEL_HEAVY.
+        """
         self._backend = backend
         if backend == "openrouter":
             self._openrouter_model = model_id
@@ -118,6 +160,8 @@ class LLMEngine:
                 cb(model_id)
         else:
             self._backend = "mlx"
+            if update_preferred:
+                self._preferred_id = model_id
             self.load_async(model_id)
 
     def reload(self) -> None:
@@ -145,6 +189,43 @@ class LLMEngine:
             self.load_async(model_id)
 
         self._executor.submit(_delete_and_reload)
+
+    # ------------------------------------------------------------------
+    # Vision on-demand
+    # ------------------------------------------------------------------
+
+    @property
+    def preferred_id(self) -> str:
+        return self._preferred_id
+
+    async def ensure_vision_ready(self, timeout: float = 300.0) -> bool:
+        """Assicura che un modello VLM sia caricato per la vision.
+
+        Se il modello corrente è già un VLM pronto, ritorna subito. Altrimenti
+        ricarica MODEL_HEAVY on-demand (tradeoff consapevole: ~20-30s di reload)
+        e attende che sia pronto. Ritorna True se pronto, False se timeout.
+
+        Il chiamante (vision.py) deve poi ripristinare il modello preferito.
+        """
+        if self._backend == "mlx" and is_vlm(self._model_id) and self.is_ready:
+            return True
+
+        log.info(
+            f"vision on-demand: ricarico {MODEL_HEAVY} "
+            f"(corrente: {self._model_id})"
+        )
+        self.switch_to(MODEL_HEAVY, "mlx", update_preferred=False)
+
+        import time
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
+            if self.is_ready and self._model_id == MODEL_HEAVY:
+                log.info(f"vision pronta: {MODEL_HEAVY}")
+                return True
+            await asyncio.sleep(0.5)
+
+        log.error(f"timeout ({timeout}s) attesa modello vision {MODEL_HEAVY}")
+        return False
 
     async def _stream_openrouter(
         self,
@@ -218,9 +299,11 @@ class LLMEngine:
 
         def _generate():
             try:
-                from mlx_vlm import stream_generate
+                vlm = is_vlm(self._model_id)
 
-                # Chat template — usa il tokenizer interno del processor
+                # Chat template — usa il tokenizer interno del processor.
+                # Per i modelli text-only (mlx-lm) self._processor È già il
+                # tokenizer (TokenizerWrapper), che espone apply_chat_template.
                 tokenizer = (
                     self._processor.tokenizer
                     if hasattr(self._processor, "tokenizer")
@@ -240,17 +323,32 @@ class LLMEngine:
                         add_generation_prompt=True,
                     )
 
+                # Generatore di token: mlx-vlm per i VLM (con image=None),
+                # mlx-lm per i modelli text-only. Il parsing dei tag <think>
+                # sottostante è identico per entrambi.
+                if vlm:
+                    from mlx_vlm import stream_generate
+                    token_iter = stream_generate(
+                        self._model,
+                        self._processor,
+                        prompt=prompt,
+                        image=None,
+                        max_tokens=max_tokens,
+                        enable_thinking=thinking,
+                    )
+                else:
+                    from mlx_lm import stream_generate as lm_stream_generate
+                    token_iter = lm_stream_generate(
+                        self._model,
+                        self._processor,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                    )
+
                 in_think = False
                 think_buf = ""
 
-                for resp in stream_generate(
-                    self._model,
-                    self._processor,
-                    prompt=prompt,
-                    image=None,
-                    max_tokens=max_tokens,
-                    enable_thinking=thinking,
-                ):
+                for resp in token_iter:
                     token = resp.text
 
                     if not in_think and "<think>" in token:

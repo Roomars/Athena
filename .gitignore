@@ -36,6 +36,9 @@ vault/
 data/memory.db
 data/*.db
 
+# Pesi YOLO scaricati a runtime da ultralytics
+*.pt
+
 # Settings con segreti
 # settings.json è in ~/Library, non nel repo — ok
 

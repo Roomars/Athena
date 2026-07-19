@@ -1,11 +1,14 @@
 """
-Motore vision — Gemma 4 31B via engine condiviso da llm.py + YOLO structured detection.
+Motore vision — Gemma 4 31B (VLM) caricato on-demand + YOLO structured detection.
 
 analyze()            → testo libero
 analyze_structured() → dict {description, apps, objects, zones, anomalies, answer}
 
-Il modello VLM è lo stesso usato per il testo (engine in llm.py).
-Non si carica un secondo modello — risparmio ~7 GB di RAM.
+Il modello di default dell'engine è text-only (leggero). La vision richiede un
+VLM: per questo si carica MODEL_HEAVY (Gemma 4 31B) SOLO al momento del bisogno
+via engine.ensure_vision_ready(), e al termine si torna al modello preferito
+dall'utente. Tradeoff consapevole: ~20-30s di reload a ogni uso della vision,
+in cambio di molta meno RAM occupata a riposo.
 """
 import base64
 import io
@@ -20,19 +23,36 @@ def is_ready() -> bool:
     return engine.is_ready
 
 
+async def _restore_preferred() -> None:
+    """Torna al modello preferito dall'utente dopo l'uso della vision."""
+    from .llm import engine
+    preferred = engine.preferred_id
+    if preferred and preferred != engine.model_id:
+        log.info(f"vision terminata: ripristino {preferred}")
+        engine.switch_to(preferred, "mlx")
+
+
 async def analyze(image_b64: str, prompt: str) -> str:
-    """Descrizione testuale libera."""
+    """Descrizione testuale libera. Carica il VLM on-demand e poi ripristina."""
     import asyncio
     from .llm import engine
+
+    ok = await engine.ensure_vision_ready()
+    if not ok:
+        return "Modello vision non disponibile — riprova tra qualche secondo."
+
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, prompt)
+    try:
+        return await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, prompt)
+    finally:
+        await _restore_preferred()
 
 
 async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     """
     Analisi strutturata in due stadi:
       1. YOLO (cpu, ~50ms) → contesto oggetti/zone
-      2. Gemma 4 31B con prompt JSON strutturato
+      2. Gemma 4 31B (VLM caricato on-demand) con prompt JSON strutturato
     """
     import asyncio
     from .llm import engine
@@ -42,8 +62,15 @@ async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     det      = await loop.run_in_executor(None, detect, image_b64)
     yolo_ctx = detection_to_context(det)
 
+    ok = await engine.ensure_vision_ready()
+    if not ok:
+        return _parse_structured("", det, user_prompt)
+
     structured_prompt = _build_structured_prompt(user_prompt, yolo_ctx)
-    raw = await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, structured_prompt)
+    try:
+        raw = await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, structured_prompt)
+    finally:
+        await _restore_preferred()
 
     return _parse_structured(raw, det, user_prompt)
 
