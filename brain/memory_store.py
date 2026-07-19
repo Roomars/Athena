@@ -27,8 +27,12 @@ def _graph():
 # ── BM25 minimale (nessuna dipendenza esterna) ────────────────────────────────
 
 def _tokenize(text: str) -> list[str]:
+    """Tokenizza per BM25/TF-IDF: minuscolo, solo lettere/cifre (accenti IT
+    inclusi). Prima usava re.split su spazi/underscore/trattini, lasciando
+    punteggiatura attaccata ai token (es. "Milano," != "milano") — rompeva
+    silenziosamente il matching su qualunque valore con virgole/parentesi."""
     import re
-    return re.split(r"[\s_\-/]+", text.lower())
+    return re.findall(r"[a-zà-öø-ÿ0-9]+", text.lower())
 
 
 class _BM25:
@@ -196,6 +200,12 @@ class MemoryStore:
                 message_count INTEGER DEFAULT 0,
                 keywords      TEXT DEFAULT '[]'
             );
+            CREATE TABLE IF NOT EXISTS fact_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                key         TEXT NOT NULL,
+                value       TEXT NOT NULL,
+                replaced_at REAL NOT NULL
+            );
         """)
         # Migrazione colonne opzionali (ignora se già esistono)
         for col, dflt in [("tags", "'[]'"), ("confidence", "1.0"),
@@ -216,18 +226,35 @@ class MemoryStore:
     def upsert_fact(self, key: str, value: str,
                     tags: list[str] | None = None,
                     confidence: float = 1.0,
-                    source: str = "extracted") -> None:
+                    source: str = "extracted") -> str | None:
+        """Inserisce/aggiorna un fatto. Se il valore cambia rispetto a quello
+        esistente, preserva il vecchio valore in fact_history e crea un edge
+        Supersedes (nuovo → storico) nel grafo — vedi memory_graph.py.
+
+        Ritorna l'id del nodo storico creato (formato "key#<timestamp>") se
+        c'è stato un aggiornamento di valore, None se il fatto è nuovo o il
+        valore non è cambiato. Il chiamante (memory_extractor) usa questo id
+        per eventualmente promuovere l'edge a Contradicts dopo verifica LLM.
+        """
         key, value = key.strip(), value.strip()
         if not key or not value:
-            return
+            return None
         if tags is None:
             tags = _auto_tags(key)
         now = time.time()
         existing = self._db.execute(
-            "SELECT key FROM facts WHERE key = ?", (key,)
+            "SELECT value FROM facts WHERE key = ?", (key,)
         ).fetchone()
-        if existing:
-            pass  # aggiornamento tracciato da updated_at; nessun self-edge
+
+        hist_node_id: str | None = None
+        if existing and existing["value"] != value:
+            hist_node_id = f"{key}#{int(now)}"
+            self._db.execute(
+                "INSERT INTO fact_history (key, value, replaced_at) VALUES (?, ?, ?)",
+                (key, existing["value"], now),
+            )
+            self._add_relation(key, hist_node_id, "Supersedes")
+
         self._db.execute(
             """INSERT OR REPLACE INTO facts
                (key, value, updated_at, created_at, tags, confidence, source)
@@ -235,6 +262,7 @@ class MemoryStore:
             (key, value, now, key, now, json.dumps(tags), confidence, source),
         )
         self._db.commit()
+        return hist_node_id
 
     def get_facts(self) -> dict[str, str]:
         rows = self._db.execute(
@@ -255,6 +283,13 @@ class MemoryStore:
     # ── Relazioni ─────────────────────────────────────────────────────────────
 
     def _add_relation(self, from_key: str, to_key: str, rel_type: str) -> None:
+        # Upsert: il DiGraph ammette un solo edge per coppia di nodi, quindi
+        # rimpiazza eventuale relazione precedente tra gli stessi due nodi
+        # invece di accumulare righe stale (es. Supersedes promosso a
+        # Contradicts dopo verifica LLM in _check_contradiction).
+        self._db.execute(
+            "DELETE FROM relations WHERE from_key = ? AND to_key = ?", (from_key, to_key)
+        )
         self._db.execute(
             "INSERT INTO relations (from_key, to_key, rel_type, created_at) VALUES (?,?,?,?)",
             (from_key, to_key, rel_type, time.time()),
@@ -279,29 +314,56 @@ class MemoryStore:
 
     def graph_snapshot(self) -> dict:
         """Snapshot del grafo arricchito con label/tipo/confidence per nodo
-        (usato da MemoryGraphView per la visualizzazione 3D)."""
+        (usato da MemoryGraphView per la visualizzazione 3D). Tre tipi di nodo:
+          fact    — chiave in facts (valore corrente)
+          history — chiave sintetica "key#<timestamp>" in fact_history (valore superato)
+          episode — chiave sintetica "episode#<id>" (origine di fatti DerivedFrom)
+        """
         snap = _graph().to_dict()
         facts_by_key = {f["key"]: f for f in self.get_facts_full()}
 
+        hist_rows = self._db.execute(
+            "SELECT key, value, replaced_at FROM fact_history"
+        ).fetchall()
+        hist_by_id = {f"{r['key']}#{int(r['replaced_at'])}": r["value"] for r in hist_rows}
+
+        ep_rows = self._db.execute("SELECT id, summary FROM episodes").fetchall()
+        ep_by_id = {f"episode#{r['id']}": r["summary"] for r in ep_rows}
+
+        def _truncate(text: str) -> str:
+            return text[:60] + ("…" if len(text) > 60 else "")
+
         nodes = []
         for key in snap["nodes"]:
-            fact = facts_by_key.get(key)
-            if fact:
-                value = fact["value"] or ""
+            if key in facts_by_key:
+                fact = facts_by_key[key]
                 nodes.append({
                     "id":         key,
-                    "label":      value[:60] + ("…" if len(value) > 60 else ""),
+                    "label":      _truncate(fact["value"] or ""),
                     "kind":       "fact",
                     "confidence": fact.get("confidence") or 0.5,
                 })
+            elif key in hist_by_id:
+                nodes.append({
+                    "id":         key,
+                    "label":      _truncate(hist_by_id[key]),
+                    "kind":       "history",
+                    "confidence": 0.3,
+                })
+            elif key in ep_by_id:
+                nodes.append({
+                    "id":         key,
+                    "label":      _truncate(ep_by_id[key]),
+                    "kind":       "episode",
+                    "confidence": 0.5,
+                })
             else:
-                # nodo presente nel grafo ma senza fatto corrispondente
-                # (es. episodio, o fatto cancellato ma con relazioni residue)
+                # nodo residuo senza corrispondenza (es. fatto cancellato)
                 nodes.append({
                     "id":         key,
                     "label":      key[:60],
-                    "kind":       "episode",
-                    "confidence": 0.5,
+                    "kind":       "unknown",
+                    "confidence": 0.2,
                 })
 
         return {"nodes": nodes, "edges": snap["edges"]}
@@ -315,12 +377,15 @@ class MemoryStore:
     # ── Episodi ───────────────────────────────────────────────────────────────
 
     def add_episode(self, summary: str, message_count: int,
-                    keywords: list[str] | None = None) -> None:
-        self._db.execute(
+                    keywords: list[str] | None = None) -> int:
+        """Ritorna l'id dell'episodio creato — usato da memory_extractor per
+        collegare i fatti estratti durante la conversazione con edge DerivedFrom."""
+        cur = self._db.execute(
             "INSERT INTO episodes (summary, timestamp, message_count, keywords) VALUES (?,?,?,?)",
             (summary.strip(), time.time(), message_count, json.dumps(keywords or [])),
         )
         self._db.commit()
+        return cur.lastrowid
 
     def get_recent_episodes(self, n: int = 5) -> list[dict]:
         rows = self._db.execute(

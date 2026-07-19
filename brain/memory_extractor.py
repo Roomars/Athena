@@ -8,6 +8,11 @@ from .memory_store import memory_store
 
 log = logging.getLogger("memory_extractor")
 
+# Chiavi dei fatti nuovi estratti dall'inizio della conversazione corrente,
+# consumate da save_episode() per creare edge DerivedFrom (episodio -> fatto).
+# Instanza singola: come working_memory/memory_store, il daemon è single-user.
+_session_keys: list[str] = []
+
 _SYSTEM = "Sei un estrattore di fatti. Rispondi SOLO con JSON valido, senza testo aggiuntivo."
 
 _FACT_PROMPT = """\
@@ -76,13 +81,19 @@ async def extract_and_save(user_msg: str, assistant_msg: str) -> None:
             if not key or not value:
                 continue
 
-            # Contradiction check: se il fatto esiste già con valore diverso
-            existing = memory_store.get_facts().get(key)
-            if existing and existing != value:
-                asyncio.create_task(_check_contradiction(key, existing, value))
-
-            memory_store.upsert_fact(key, value)
+            old_value = memory_store.get_facts().get(key)
+            hist_node_id = memory_store.upsert_fact(key, value)
             log.info(f"memoria: '{key}' = '{value}'")
+
+            if hist_node_id and old_value and old_value != value:
+                # Valore cambiato: upsert_fact ha già creato l'edge Supersedes
+                # (key -> hist_node_id). Verifica LLM se è una vera contraddizione
+                # (in tal caso l'edge viene promosso a Contradicts).
+                asyncio.create_task(_check_contradiction(key, old_value, value, hist_node_id))
+            elif hist_node_id is None:
+                # Fatto nuovo (non un aggiornamento): cerca fatti correlati.
+                asyncio.create_task(_link_related(key, value))
+                _session_keys.append(key)
 
         # Gap detection: cerca riferimenti a cose sconosciute
         asyncio.create_task(_gap_detection(user_msg, assistant_msg))
@@ -91,8 +102,14 @@ async def extract_and_save(user_msg: str, assistant_msg: str) -> None:
         log.debug(f"extract_and_save ignorato: {e}")
 
 
-async def _check_contradiction(key: str, old_value: str, new_value: str) -> None:
-    """Chiede all'LLM se old_value e new_value si contraddicono; se sì, aggiunge edge."""
+async def _check_contradiction(key: str, old_value: str, new_value: str, hist_node_id: str) -> None:
+    """Chiede all'LLM se old_value e new_value si contraddicono.
+
+    upsert_fact ha già creato un edge Supersedes (key -> hist_node_id), il
+    caso di default per un valore che cambia. Se l'LLM conferma che è una
+    vera contraddizione (non solo una correzione/aggiornamento), l'edge
+    viene promosso a Contradicts.
+    """
     try:
         prompt = _CONTRADICT_PROMPT.format(key=key, old_value=old_value, new_value=new_value)
         answer = await _llm_text([
@@ -100,9 +117,31 @@ async def _check_contradiction(key: str, old_value: str, new_value: str) -> None
             {"role": "user",   "content": prompt},
         ], max_tokens=5)
         if answer.lower().startswith("s"):
-            log.warning(f"contraddizione rilevata per '{key}': '{old_value}' vs '{new_value}' — valore aggiornato")
+            memory_store.add_relation(key, hist_node_id, "Contradicts")
+            log.warning(f"contraddizione rilevata per '{key}': '{old_value}' vs '{new_value}'")
     except Exception as e:
         log.debug(f"_check_contradiction ignorato: {e}")
+
+
+async def _link_related(key: str, value: str) -> None:
+    """Cerca fatti semanticamente correlati (hybrid BM25+TF-IDF già presente
+    in memory_store.search_facts) e crea edge RelatesTo verso i migliori 2
+    candidati — solo per fatti nuovi, per non intasare il grafo ad ogni update."""
+    try:
+        loop = asyncio.get_event_loop()
+        candidates = await loop.run_in_executor(None, memory_store.search_facts, value, 4)
+        added = 0
+        for c in candidates:
+            other_key = c.get("key", "")
+            if other_key and other_key != key:
+                memory_store.add_relation(key, other_key, "RelatesTo")
+                added += 1
+                if added >= 2:
+                    break
+        if added:
+            log.info(f"RelatesTo: '{key}' collegato a {added} fatti correlati")
+    except Exception as e:
+        log.debug(f"_link_related ignorato: {e}")
 
 
 async def _gap_detection(user_msg: str, assistant_msg: str) -> None:
@@ -156,8 +195,17 @@ async def save_episode(messages: list[dict]) -> None:
             summary = next((m["content"] for m in messages if m["role"] == "user"), "")[:120]
         if summary:
             keywords = list({w for w in _tokenize(summary) if len(w) > 3})[:8]
-            memory_store.add_episode(summary=summary, message_count=len(messages), keywords=keywords)
+            episode_id = memory_store.add_episode(summary=summary, message_count=len(messages), keywords=keywords)
             log.info(f"episodio salvato: '{summary[:60]}...' ({len(messages)} msg)")
+
+            # DerivedFrom: collega l'episodio ai fatti nuovi estratti durante
+            # questa conversazione (episodio -> fatto, "il fatto deriva da qui").
+            if _session_keys:
+                episode_node = f"episode#{episode_id}"
+                for key in dict.fromkeys(_session_keys):  # dedup preservando ordine
+                    memory_store.add_relation(episode_node, key, "DerivedFrom")
+                log.info(f"DerivedFrom: episodio collegato a {len(set(_session_keys))} fatti")
+                _session_keys.clear()
     except Exception as e:
         log.debug(f"save_episode ignorato: {e}")
 
