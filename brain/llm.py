@@ -406,10 +406,10 @@ class LLMEngine:
                 self._processor, self._config, prompt, num_images=1
             )
             result = generate(
-                self._model, self._processor, image_pil, formatted,
+                self._model, self._processor, formatted, image_pil,
                 max_tokens=max_tokens, verbose=False,
-            ).strip()
-            return result
+            )
+            return result.text.strip()
         except Exception as e:
             log.error(f"errore generazione vision: {e}")
             return f"Errore durante l'analisi: {e}"
