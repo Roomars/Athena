@@ -10,22 +10,22 @@ final class DaemonManager {
     private let maxRestarts = 5
 
     var daemonPath: String {
-        // Produzione: ari/ dentro il bundle Resources
+        // Produzione: backend Python dentro il bundle Resources (sottocartella "ari")
         if let bundleRes = Bundle.main.resourceURL {
             let candidate = bundleRes.appendingPathComponent("ari")
             if FileManager.default.fileExists(atPath: candidate.appendingPathComponent(".venv").path) {
                 return candidate.path
             }
         }
-        // Sviluppo Xcode: risali dal file sorgente fino a ari/
-        // #file = .../ari/AriApp/Sources/AriApp/DaemonManager.swift
+        // Sviluppo Xcode: risali dal file sorgente fino alla root del progetto (Athena/)
+        // #file = .../Athena/AriApp/Sources/AriApp/DaemonManager.swift
         let src = URL(fileURLWithPath: #file)
-        let ariDir = src
-            .deletingLastPathComponent()  // AriApp/
+        let projectRoot = src
+            .deletingLastPathComponent()  // AriApp/ (target)
             .deletingLastPathComponent()  // Sources/
-            .deletingLastPathComponent()  // AriApp (package)/
-            .deletingLastPathComponent()  // ari/
-        return ariDir.path
+            .deletingLastPathComponent()  // AriApp/ (package)
+            .deletingLastPathComponent()  // Athena/ (root del progetto)
+        return projectRoot.path
     }
 
     func start() {

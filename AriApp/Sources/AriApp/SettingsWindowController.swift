@@ -894,7 +894,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func openLogs() {
-        let url = URL(fileURLWithPath: NSHomeDirectory() + "/Documents/Athena/ari/brain/ari.log")
+        let url = URL(fileURLWithPath: NSHomeDirectory() + "/Library/Logs/Ari/ari.log")
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.open(url)
         }
