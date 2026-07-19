@@ -39,6 +39,9 @@ data/*.db
 # Pesi YOLO scaricati a runtime da ultralytics
 *.pt
 
+# Modelli voce Piper TTS (binario grande, non versionare — il .json di config resta tracciato)
+piper/models/*.onnx
+
 # Settings con segreti
 # settings.json è in ~/Library, non nel repo — ok
 
