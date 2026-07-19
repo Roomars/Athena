@@ -9,6 +9,8 @@ from .prompt import build_system_prompt
 from .complexity_router import classify
 from .tts import tts
 from .stt import stt
+from . import settings as _settings
+from .persona import rewrite_in_character, PERSONAS
 from .skill_router import router as skill_router
 from .memory_extractor import extract_and_save, save_episode
 from . import vision
@@ -23,6 +25,14 @@ _pending_mod:      dict | None = None
 _pending_build:    dict | None = None
 _approval_future:  asyncio.Future | None = None
 _always_allowed:   set[str] = set()
+_active_persona:   str = "nessuna"
+
+# Streaming TTS: individua frasi complete (testo seguito da spazio dopo .!?)
+# e disattiva lo streaming se la risposta contiene codice/markdown strutturale
+# (header, liste, SAVE_TO) — in quel caso si torna al blocco unico a fine risposta.
+import re as _re
+_SENTENCE_END_RE        = _re.compile(r'(?<=[.!?])\s+')
+_TTS_STREAM_DISABLE_RE   = _re.compile(r'```|^#{1,6}\s|^\s*[-*]\s|SAVE_TO:', _re.MULTILINE)
 
 log = logging.getLogger("ws")
 
@@ -68,7 +78,16 @@ async def _notify_tts_done():
 
 
 async def handle_ws(ws: WebSocket):
-    global _action_executor
+    global _action_executor, _active_persona
+    # Legge la persona attiva dalle impostazioni persistite
+    # (load_settings() è già stato eseguito da main.py prima di questa chiamata)
+    _active_persona = _settings.get("active_persona", "nessuna")
+    if _active_persona not in PERSONAS:
+        _active_persona = "nessuna"
+    tts.set_tuning(
+        _settings.get("tts_rate",  100),
+        _settings.get("tts_pitch", 100),
+    )
     if _action_executor is None:
         _action_executor = ActionExecutor(
             approval_fn=_request_tool_approval,
@@ -117,6 +136,32 @@ async def handle_ws(ws: WebSocket):
 
             elif msg_type == "set_tts_engine":
                 tts.set_engine(msg.get("engine", "apple"))
+
+            elif msg_type == "set_voice_tuning":
+                try:
+                    rate  = int(msg.get("rate",  100))
+                    pitch = int(msg.get("pitch", 100))
+                except (ValueError, TypeError):
+                    log.warning(f"set_voice_tuning: payload non valido: {msg}")
+                else:
+                    tts.set_tuning(rate, pitch)
+                    rate, pitch = tts.rate_pct, tts.pitch_pct
+                    data = dict(_settings._cache)
+                    data["tts_rate"]  = rate
+                    data["tts_pitch"] = pitch
+                    _settings.save(data)
+                    log.info(f"voice tuning: rate={rate}% pitch={pitch}%")
+
+            elif msg_type == "set_persona":
+                persona_id = msg.get("persona_id", "nessuna")
+                if persona_id not in PERSONAS:
+                    log.warning(f"set_persona: id sconosciuto '{persona_id}', fallback a 'nessuna'")
+                    persona_id = "nessuna"
+                _active_persona = persona_id
+                data = dict(_settings._cache)
+                data["active_persona"] = persona_id
+                _settings.save(data)
+                log.info(f"persona attiva impostata: {persona_id}")
 
             elif msg_type == "set_thresholds":
                 from .stats_monitor import update_thresholds
@@ -338,6 +383,14 @@ async def _respond(user_input: str):
     full_response = ""
     first_chunk   = True
 
+    # Streaming TTS: solo senza personalità attiva (altrimenti la riscrittura
+    # in-character richiede il testo completo) e solo se la risposta resta
+    # prosa semplice — un blocco di codice, un header o una lista disattiva
+    # lo streaming per il resto della risposta (fallback al comportamento
+    # originale: sintesi in blocco unico a fine risposta).
+    stream_tts = _active_persona == "nessuna"
+    tts_buffer = ""
+
     async for kind, token in engine.stream(messages, max_tokens=max_tokens, thinking=use_thinking):
         if kind == "thinking":
             continue
@@ -347,6 +400,20 @@ async def _respond(user_input: str):
                 first_chunk = False
             full_response += token
             await manager.send({"type": "response_chunk", "content": token, "stream": True})
+
+            if stream_tts:
+                tts_buffer += token
+                if _TTS_STREAM_DISABLE_RE.search(full_response):
+                    stream_tts = False
+                    tts_buffer = ""
+                else:
+                    parts = _SENTENCE_END_RE.split(tts_buffer)
+                    if len(parts) > 1:
+                        *complete, tts_buffer = parts
+                        for sentence in complete:
+                            sentence = _tts_text(sentence.strip())
+                            if sentence:
+                                tts.enqueue(sentence)
         elif kind == "done":
             break
 
@@ -357,8 +424,22 @@ async def _respond(user_input: str):
     log.info(f"risposta completata ({len(full_response)} chars)")
 
     # TTS: Ari parla la risposta (codice escluso)
+    # Con persona "nessuna" (default), rewrite_in_character è un passthrough
+    # immediato — zero latenza, nessuna regressione rispetto al comportamento attuale.
     if full_response.strip():
-        tts.speak(_tts_text(full_response))
+        if stream_tts:
+            # Streaming attivo per tutta la risposta: resta solo l'ultimo
+            # frammento (frase finale senza punteggiatura, o risposta breve
+            # mai spezzata). rewrite_in_character non serve: senza persona
+            # attiva è comunque un passthrough immediato.
+            tail = _tts_text(tts_buffer.strip())
+            if tail:
+                tts.enqueue(tail)
+        else:
+            # Persona attiva, o risposta con codice/markdown strutturale:
+            # comportamento originale invariato, sintesi in blocco unico.
+            _clean = _tts_text(full_response)
+            tts.speak(await rewrite_in_character(_clean, _active_persona))
 
     # Memoria: estrae fatti in background e notifica l'orb
     if full_response.strip():
@@ -388,7 +469,8 @@ async def _respond_vision(image_b64: str, prompt: str):
     await manager.send({"type": "response_done", "state": "idle"})
 
     if result.strip():
-        tts.speak(_tts_text(result))
+        _clean = _tts_text(result)
+        tts.speak(await rewrite_in_character(_clean, _active_persona))
         asyncio.create_task(extract_and_save(f"[screenshot] {prompt}", result))
 
 

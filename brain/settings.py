@@ -19,6 +19,9 @@ DEFAULTS = {
     "tts_voice": "Federica (Premium)",
     "home_assistant": {"url": "", "token": ""},
     "setup_completed": False,
+    "active_persona": "nessuna",
+    "tts_rate":        100,
+    "tts_pitch":       100,
 }
 
 log = logging.getLogger("settings")

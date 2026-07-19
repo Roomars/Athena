@@ -9,7 +9,13 @@ VLM: per questo si carica MODEL_HEAVY (Gemma 4 31B) SOLO al momento del bisogno
 via engine.ensure_vision_ready(), e al termine si torna al modello preferito
 dall'utente. Tradeoff consapevole: ~20-30s di reload a ogni uso della vision,
 in cambio di molta meno RAM occupata a riposo.
+
+Il revert al modello preferito viene ora schedulato con un grace period di 45s
+(_VISION_GRACE_SECONDS): richieste vision consecutive entro la finestra non
+pagano il reload. Il task asyncio pendente viene cancellato se arriva una nuova
+richiesta prima che scada la finestra.
 """
+import asyncio
 import base64
 import io
 import json
@@ -17,13 +23,19 @@ import logging
 
 log = logging.getLogger("vision")
 
-
-def is_ready() -> bool:
-    from .llm import engine
-    return engine.is_ready
+_VISION_GRACE_SECONDS: float = 45.0
+_pending_revert: asyncio.Task | None = None
 
 
-async def _restore_preferred() -> None:
+def _cancel_pending_revert() -> None:
+    """Cancella il revert schedulato se è ancora in attesa."""
+    global _pending_revert
+    if _pending_revert is not None and not _pending_revert.done():
+        _pending_revert.cancel()
+    _pending_revert = None
+
+
+async def _do_restore_preferred() -> None:
     """Torna al modello preferito dall'utente dopo l'uso della vision."""
     from .llm import engine
     preferred = engine.preferred_id
@@ -32,11 +44,32 @@ async def _restore_preferred() -> None:
         engine.switch_to(preferred, "mlx")
 
 
+async def _delayed_restore() -> None:
+    """Aspetta la grace period poi ripristina il modello preferito."""
+    try:
+        await asyncio.sleep(_VISION_GRACE_SECONDS)
+        await _do_restore_preferred()
+    except asyncio.CancelledError:
+        pass
+
+
+def _schedule_restore() -> None:
+    """Schedula il revert del modello dopo la grace period (cancellabile)."""
+    global _pending_revert
+    _cancel_pending_revert()
+    _pending_revert = asyncio.create_task(_delayed_restore())
+
+
+def is_ready() -> bool:
+    from .llm import engine
+    return engine.is_ready
+
+
 async def analyze(image_b64: str, prompt: str) -> str:
     """Descrizione testuale libera. Carica il VLM on-demand e poi ripristina."""
-    import asyncio
     from .llm import engine
 
+    _cancel_pending_revert()
     ok = await engine.ensure_vision_ready()
     if not ok:
         return "Modello vision non disponibile — riprova tra qualche secondo."
@@ -45,7 +78,7 @@ async def analyze(image_b64: str, prompt: str) -> str:
     try:
         return await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, prompt)
     finally:
-        await _restore_preferred()
+        _schedule_restore()
 
 
 async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
@@ -54,7 +87,6 @@ async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
       1. YOLO (cpu, ~50ms) → contesto oggetti/zone
       2. Gemma 4 31B (VLM caricato on-demand) con prompt JSON strutturato
     """
-    import asyncio
     from .llm import engine
     from .vision_detector import detect, detection_to_context
 
@@ -62,6 +94,7 @@ async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     det      = await loop.run_in_executor(None, detect, image_b64)
     yolo_ctx = detection_to_context(det)
 
+    _cancel_pending_revert()
     ok = await engine.ensure_vision_ready()
     if not ok:
         return _parse_structured("", det, user_prompt)
@@ -70,7 +103,7 @@ async def analyze_structured(image_b64: str, user_prompt: str) -> dict:
     try:
         raw = await loop.run_in_executor(engine._executor, _analyze_sync, image_b64, structured_prompt)
     finally:
-        await _restore_preferred()
+        _schedule_restore()
 
     return _parse_structured(raw, det, user_prompt)
 

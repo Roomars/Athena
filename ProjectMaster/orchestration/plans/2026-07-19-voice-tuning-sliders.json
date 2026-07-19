@@ -1,0 +1,108 @@
+{
+  "plan": {
+    "id": "2026-07-19-voice-tuning-sliders",
+    "created": "19-07-2026 22:15",
+    "status": "completed",
+    "objective": "Aggiungere 2 slider in Impostazioni > Voce (Velocità, Tono) che regolano rate/pitch di entrambi i motori TTS di Ari (Apple say, Kokoro), range 50%-150%, default 100% = comportamento identico a oggi (zero regressione, zero DSP extra a default).",
+    "confirmed_by_user": true,
+    "knowledge_files_read": ["brain/tts.py", "AriApp/Sources/AriApp/SettingsWindowController.swift"]
+  },
+  "token_budget": {
+    "strategy": "minimal-context",
+    "haiku_tasks": ["T03"],
+    "sonnet_tasks": ["T01", "T02"],
+    "opus_tasks": [],
+    "estimated_total_tokens": 0,
+    "context_per_agent": "Ogni agente riceve SOLO i file elencati nel suo task"
+  },
+  "context": {
+    "directives_referenced": [],
+    "canonical_state_version": "sessione.md 19-07-2026 21:57",
+    "constraints": [
+      "Default 100%/100% deve produrre output BINARIAMENTE identico a oggi: Apple senza [[pbas]] iniettato, Kokoro senza pitch-shift DSP eseguito",
+      "Nessuna nuova dipendenza — scipy è già nel venv per il pitch-shift Kokoro",
+      "Contratto WS fisso (non rinegoziabile tra i 2 task paralleli): {\"type\": \"set_voice_tuning\", \"rate\": <50-150>, \"pitch\": <50-150>}",
+      "Non toccare la logica set_engine/fallback Kokoro->Apple già esistente in tts.py"
+    ],
+    "knowledge_snippets": {
+      "tts.py_stato_reale": "TTSEngine con _AppleBackend/_KokoroBackend dietro interfaccia TTSBackend (speak/stop). APPLE_RATE=185 costante fissa usata in _AppleBackend.speak() riga 74. Kokoro: pipeline(text, voice='if_sara', speed=1.0) riga 138, audio numpy scritto su wav via soundfile prima di afplay.",
+      "settings.py_pattern": "dict DEFAULTS + load()/save()/get(), stessa fonte usata da active_persona.",
+      "SettingsWindowController.swift_pattern": "buildVoce() (riga ~262) contiene ttsSwitch, ttsEngineControl (NSSegmentedControl). Pattern slider già usato altrove: cpuThreshSlider/ramThreshSlider in buildGenerale() con NSSlider(value:minValue:maxValue:target:action:) + sliderPair(slider, label) + valueLabel helper — replicare questo stile esatto per i 2 nuovi slider."
+    }
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "name": "Rate/pitch su entrambi i backend TTS + wiring settings/WS",
+      "engine": "claude",
+      "agent": "backend",
+      "model": "sonnet",
+      "context_files": ["brain/tts.py", "brain/settings.py", "brain/ws_handler.py"],
+      "input": "TTSEngine attuale con APPLE_RATE fisso 185 e Kokoro speed=1.0 fisso",
+      "output": "tts.py: TTSEngine espone set_tuning(rate_pct, pitch_pct) che imposta rate/pitch correnti; _AppleBackend.speak() usa rate corrente per -r e inietta [[pbas N]] SOLO se pitch_pct != 100; _KokoroBackend.speak() passa speed=rate_pct/100 al pipeline e applica pitch-shift via scipy.signal.resample SOLO se pitch_pct != 100 (skip totale altrimenti, zero overhead a default); settings.py: chiavi tts_rate=100, tts_pitch=100 in DEFAULTS; ws_handler.py: handler 'set_voice_tuning' che valida range 50-150 (clamp) e chiama tts.set_tuning() + persiste su settings",
+      "depends_on": [],
+      "parallel_with": ["T02"],
+      "estimated_minutes": 30,
+      "self_correction": {
+        "enabled": true,
+        "command": "python -m py_compile brain/tts.py brain/settings.py brain/ws_handler.py && python -c \"from brain.tts import tts; tts.set_tuning(100,100); tts.set_tuning(130,70); print('ok')\"",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Compilazione OK, set_tuning richiamabile senza eccezioni a default e a valori estremi (50/150)"
+    },
+    {
+      "id": "T02",
+      "name": "Slider Velocità/Tono nel pannello Voce",
+      "engine": "claude",
+      "agent": "frontend",
+      "model": "sonnet",
+      "context_files": ["AriApp/Sources/AriApp/SettingsWindowController.swift", "AriApp/Sources/AriApp/SettingsManager.swift"],
+      "input": "Contratto WS fisso: {\"type\": \"set_voice_tuning\", \"rate\": <50-150>, \"pitch\": <50-150>}. Pattern slider esistente: cpuThreshSlider in buildGenerale()",
+      "output": "SettingsManager: 2 nuovi campi ttsRate/ttsPitch (Double, default 100) in AriSettings; SettingsWindowController buildVoce(): 2 nuovi NSSlider (50-150, tickmarks) con label valore %, sotto ttsEngineControl, stile row(label:control:) esistente; action che aggiorna SettingsManager+save() e invia set_voice_tuning via WebSocketManager.shared.sendJSON",
+      "depends_on": [],
+      "parallel_with": ["T01"],
+      "estimated_minutes": 25,
+      "self_correction": {
+        "enabled": true,
+        "command": "swift build --package-path AriApp",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Build OK, slider visibili nel pannello Voce esistente, default 100% coerente col valore persistito"
+    },
+    {
+      "id": "T03",
+      "name": "Code review finale",
+      "engine": "claude",
+      "agent": "reviewer",
+      "model": "haiku",
+      "context_files": ["brain/tts.py", "brain/ws_handler.py", "brain/settings.py", "AriApp/Sources/AriApp/SettingsWindowController.swift", "AriApp/Sources/AriApp/SettingsManager.swift"],
+      "input": "File modificati da T01+T02",
+      "output": "Report review",
+      "depends_on": ["T01", "T02"],
+      "parallel_with": [],
+      "estimated_minutes": 15,
+      "self_correction": {"enabled": false, "command": null, "max_retries": 0},
+      "status": "done",
+      "verification": "1 problema bloccante trovato e corretto (int() non gestito su payload malformato in set_voice_tuning, ora try/except con fallback silenzioso e log warning) + 1 miglioramento applicato (property pubbliche rate_pct/pitch_pct invece di accesso a campi privati). Contratto WS, clamping 50-150 e invariante 100%/100% confermati corretti."
+    }
+  ],
+  "verification_loop": {
+    "boot_command": null,
+    "health_check": null,
+    "build_command": "swift build --package-path AriApp",
+    "test_command": "python -m py_compile brain/tts.py brain/settings.py brain/ws_handler.py",
+    "preview_command": null,
+    "expected_exit_code": 0,
+    "must_pass_before_close": true,
+    "self_correct_on_failure": true
+  },
+  "result": {
+    "completed_at": null,
+    "total_tokens_used": 0,
+    "files_modified": [],
+    "files_created": [],
+    "journal_entry": null
+  }
+}

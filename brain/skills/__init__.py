@@ -22,6 +22,7 @@ from .game_updater      import GameUpdaterSkill
 from .code_runner       import CodeRunnerSkill
 from .browser_control   import BrowserControlSkill
 from .computer_control  import ComputerControlSkill
+from .office_docs        import OfficeDocsSkill
 
 ALL_SKILLS = [
     SelfModifySkill(),       # prima: intercettata da ws_handler
@@ -42,6 +43,7 @@ ALL_SKILLS = [
     MacSettingsSkill(),
     DesktopControlSkill(),
     CodeRunnerSkill(),
+    OfficeDocsSkill(),       # "crea presentazione/word/excel" → prima di file_ops/file_processor generici
     FileProcessorSkill(),
     FileOpsSkill(),
     SystemInfoSkill(),

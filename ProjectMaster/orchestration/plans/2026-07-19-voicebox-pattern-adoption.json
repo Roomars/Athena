@@ -1,0 +1,166 @@
+{
+  "plan": {
+    "id": "2026-07-19-voicebox-pattern-adoption",
+    "created": "19-07-2026 20:40",
+    "status": "completed",
+    "objective": "Adottare nel codice di Ari 3 pattern osservati nel progetto open-source Voicebox (github.com/jamiepine/voicebox, 43.2k stelle), senza dipendere dal progetto esterno: (1) interfaccia TTS comune con coda seriale estesa a Kokoro, (2) personalità vocali — riscrittura in-character via LLM locale prima del TTS, con sezione dedicata in Impostazioni, (3) verifica/mitigazione contesa GPU residua tra MLX e Kokoro. Il 4° pattern osservato (unload VRAM granulare) è rimandato per assenza di necessità concreta.",
+    "confirmed_by_user": true,
+    "knowledge_files_read": [
+      "sessione.md",
+      "brain/tts.py",
+      "brain/llm.py",
+      "brain/ws_handler.py",
+      "brain/settings.py",
+      "AriApp/Sources/AriApp/SettingsWindowController.swift"
+    ]
+  },
+  "token_budget": {
+    "strategy": "minimal-context",
+    "haiku_tasks": ["T05"],
+    "sonnet_tasks": ["T01", "T03", "T04"],
+    "opus_tasks": ["T02"],
+    "estimated_total_tokens": 0,
+    "context_per_agent": "Ogni agente riceve SOLO i file elencati nel suo task"
+  },
+  "context": {
+    "directives_referenced": [],
+    "canonical_state_version": "sessione.md 19-07-2026 12:32",
+    "constraints": [
+      "Non toccare il pannello 'Voce' esistente (motore TTS Apple/Kokoro) — la selezione persona va in una sezione sidebar NUOVA e distinta",
+      "Non introdurre dipendenze esterne nuove (niente MCP, niente librerie TTS aggiuntive) — solo refactor interno",
+      "La riscrittura in-character deve essere opzionale/disattivabile (persona 'nessuna' = passthrough, comportamento identico a oggi)",
+      "Rispettare Test & Self-Correction Protocol di CLAUDE.md: scrivi → testa → se fallisce correggi, max 3 tentativi"
+    ],
+    "knowledge_snippets": {
+      "tts.py_stato_reale": "TTSEngine già dual-engine (apple/kokoro) con switch if/elif in set_engine()/speak(), non interfaccia formale. speak() e stop() sono i 2 metodi pubblici chiamati da ws_handler.py.",
+      "llm.py_stato_reale": "LLMEngine._executor = ThreadPoolExecutor(max_workers=1) già seriale per text+vision (fix bug 'no stream gpu 3' del 05-07-2026). Kokoro TTS gira su threading.Thread separato in tts.py — contesa con MLX è teorica, non ancora riprodotta.",
+      "ws_handler.py_punto_iniezione": "tts.speak(_tts_text(full_response)) in _respond() riga 361 e in _respond_vision() riga 391 — punto naturale per inserire la riscrittura in-character prima della chiamata.",
+      "settings.py_pattern": "dict DEFAULTS + load()/save()/get() su settings.json in ~/Library/Application Support/Ari — persona attiva va salvata come nuova chiave qui.",
+      "SettingsWindowController.swift_pattern": "sidebar items array (id/label/icon) + dict panels[id] = build...() + selectItem(at:) che swappa la view. Nuova voce 'Personalità' richiede: 1 nuovo SidebarItem, 1 nuovo buildPersonalita(), aggiunta a panels[]."
+    }
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "name": "Interfaccia TTS comune + coda seriale estesa a Kokoro",
+      "engine": "claude",
+      "agent": "backend",
+      "model": "sonnet",
+      "model_reason": "Refactor strutturato di codice server-side esistente, logica non banale ma non architetturale",
+      "context_files": ["brain/tts.py", "brain/llm.py"],
+      "input": "TTSEngine attuale (apple/kokoro con if/elif) in brain/tts.py, ThreadPoolExecutor(max_workers=1) già presente in brain/llm.py per text+vision",
+      "output": "brain/tts.py refactored: piccola interfaccia comune (ABC o Protocol) speak()/stop() con 2 implementazioni concrete (TTSEngineApple, TTSEngineKokoro) dietro la stessa classe wrapper TTSEngine usata da ws_handler.py (nessuna modifica alla firma pubblica esistente); sintesi Kokoro instradata attraverso una coda seriale (executor a 1 worker dedicato, o riuso di un secondo ThreadPoolExecutor(max_workers=1) separato da quello MLX ma con mutua esclusione se generazione LLM e TTS Kokoro si sovrappongono)",
+      "depends_on": [],
+      "parallel_with": ["T02"],
+      "estimated_minutes": 30,
+      "self_correction": {
+        "enabled": true,
+        "command": "python -c \"from brain.tts import tts; print('import ok')\"",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Import senza errori, speak()/stop() mantengono la stessa firma pubblica usata in ws_handler.py, nessuna regressione sul fallback kokoro->apple esistente"
+    },
+    {
+      "id": "T02",
+      "name": "Design prompt riscrittura in-character (personalità vocale)",
+      "engine": "claude",
+      "agent": "ai-engineer",
+      "model": "opus",
+      "model_reason": "Progettazione prompt e struttura persona — ragionamento non delegabile a modello minore",
+      "context_files": ["brain/llm.py", "brain/ws_handler.py", "brain/prompt.py"],
+      "input": "Pipeline attuale: full_response (testo LLM) → _tts_text() (pulizia markdown/codice) → tts.speak(). MODEL_FAST = mlx-community/Llama-3.2-3B-Instruct-4bit già disponibile per latenza minima.",
+      "output": "Modulo brain/persona.py (o funzione dedicata): struttura dati Persona (nome, tono/istruzioni di stile, eventuale prompt system), lista persone predefinite + 'nessuna' (passthrough), funzione async rewrite_in_character(text, persona) che chiama engine.stream/generate con MODEL_FAST e restituisce testo riscritto, da inserire tra _tts_text() e tts.speak() in ws_handler.py",
+      "depends_on": [],
+      "parallel_with": ["T01"],
+      "estimated_minutes": 25,
+      "self_correction": {
+        "enabled": true,
+        "command": "python -c \"from brain.persona import PERSONAS, rewrite_in_character; print(list(PERSONAS.keys()))\"",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Persona 'nessuna' restituisce il testo invariato (passthrough verificabile senza LLM), lista persone non vuota"
+    },
+    {
+      "id": "T03",
+      "name": "Wiring pipeline persona + handler WebSocket + persistenza",
+      "engine": "claude",
+      "agent": "backend",
+      "model": "sonnet",
+      "model_reason": "Integrazione di componenti già progettati, logica di wiring standard",
+      "context_files": ["brain/ws_handler.py", "brain/settings.py"],
+      "input": "TTSEngine refactored (T01), modulo persona.py (T02)",
+      "output": "ws_handler.py: chiamata a rewrite_in_character() prima di ogni tts.speak() in _respond() e _respond_vision(); nuovo handler ws 'set_persona' (msg_type) che aggiorna la persona attiva; settings.py: nuova chiave 'active_persona' in DEFAULTS, persistita via save()/load() esistenti",
+      "depends_on": ["T01", "T02"],
+      "parallel_with": [],
+      "estimated_minutes": 20,
+      "self_correction": {
+        "enabled": true,
+        "command": "python -m py_compile brain/ws_handler.py brain/settings.py",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Compilazione senza errori (py_compile exit 0), persona 'nessuna' di default non altera il comportamento TTS esistente (nessuna regressione)"
+    },
+    {
+      "id": "T04",
+      "name": "Sezione dedicata \"Personalità Vocali\" in Impostazioni",
+      "engine": "claude",
+      "agent": "frontend",
+      "model": "sonnet",
+      "model_reason": "UI standard riusando pattern sidebar già esistente (NSTableView + dict panels)",
+      "context_files": ["AriApp/Sources/AriApp/SettingsWindowController.swift"],
+      "input": "Handler ws 'set_persona' (T03), pattern sidebar esistente (items array id/label/icon + panels dict + selectItem)",
+      "output": "Nuovo SidebarItem 'personalita' (label 'Personalità', icon es. person.wave.2.fill) aggiunto a items, DISTINTO dalla voce 'voce' esistente (motore TTS Apple/Kokoro resta intatto e non toccato); nuovo buildPersonalita() con NSSegmentedControl o NSPopUpButton per selezionare la persona attiva tra quelle esposte da PERSONAS (T02), invio 'set_persona' via WebSocketManager.shared.sendJSON coerente col pattern di ttsEngineChanged esistente",
+      "depends_on": ["T03"],
+      "parallel_with": [],
+      "estimated_minutes": 25,
+      "self_correction": {
+        "enabled": true,
+        "command": "swift build --package-path AriApp",
+        "max_retries": 3
+      },
+      "status": "done",
+      "verification": "Build Swift senza errori, nuova voce sidebar visibile e distinta da 'Voce', nessuna modifica al pannello Voce esistente"
+    },
+    {
+      "id": "T05",
+      "name": "Code review finale",
+      "engine": "claude",
+      "agent": "reviewer",
+      "model": "haiku",
+      "model_reason": "Checklist di review su diff già scritto, regole fisse",
+      "context_files": ["brain/tts.py", "brain/persona.py", "brain/ws_handler.py", "brain/settings.py", "AriApp/Sources/AriApp/SettingsWindowController.swift"],
+      "input": "Tutti i file modificati/creati da T01-T04",
+      "output": "Report review: correttezza, sicurezza, qualità, eventuali regressioni sul comportamento esistente (fallback kokoro->apple, persona 'nessuna' passthrough)",
+      "depends_on": ["T01", "T02", "T03", "T04"],
+      "parallel_with": [],
+      "estimated_minutes": 15,
+      "self_correction": {
+        "enabled": false,
+        "command": null,
+        "max_retries": 0
+      },
+      "status": "done",
+      "verification": "Report prodotto — 2 problemi reali trovati e corretti (persona non sincronizzata alla riapertura Impostazioni via SettingsManager.activePersona; array id/label duplicati unificati in personaOptions), 1 falso positivo dismesso con motivazione (race condition _active_persona: ConnectionManager supporta una sola connessione, message loop sequenziale — non riproducibile)"
+    }
+  ],
+  "verification_loop": {
+    "boot_command": null,
+    "health_check": null,
+    "build_command": "swift build --package-path AriApp",
+    "test_command": "python -m py_compile brain/tts.py brain/persona.py brain/ws_handler.py brain/settings.py",
+    "preview_command": null,
+    "expected_exit_code": 0,
+    "must_pass_before_close": true,
+    "self_correct_on_failure": true
+  },
+  "result": {
+    "completed_at": null,
+    "total_tokens_used": 0,
+    "files_modified": [],
+    "files_created": [],
+    "journal_entry": null
+  }
+}

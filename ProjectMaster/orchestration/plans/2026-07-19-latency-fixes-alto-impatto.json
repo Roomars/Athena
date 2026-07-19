@@ -1,0 +1,119 @@
+{
+  "plan": {
+    "id": "2026-07-19-latency-fixes-alto-impatto",
+    "created": "19-07-2026 23:10",
+    "status": "completed",
+    "objective": "Correggere i 2 colli di bottiglia ad alto impatto più sicuri identificati dall'audit prestazioni: (3) vision on-demand ricarica il modello ad ogni singolo uso anche se le richieste sono vicine nel tempo; (4) l'estrazione memoria post-risposta usa il modello primario pesante sullo stesso executor single-thread della conversazione, mettendo in coda il turno successivo dell'utente dietro il lavoro di estrazione. I 2 fix più rischiosi (streaming TTS, no-1/no-2 dell'audit) sono un piano separato in attesa di conferma esplicita per il design.",
+    "confirmed_by_user": true,
+    "knowledge_files_read": [
+      "brain/vision.py",
+      "brain/persona.py",
+      "brain/memory_extractor.py",
+      "brain/llm.py"
+    ]
+  },
+  "token_budget": {
+    "strategy": "minimal-context",
+    "haiku_tasks": [
+      "T03"
+    ],
+    "sonnet_tasks": [
+      "T01",
+      "T02"
+    ],
+    "opus_tasks": [],
+    "context_per_agent": "Ogni agente riceve SOLO i file elencati nel suo task"
+  },
+  "context": {
+    "directives_referenced": [],
+    "canonical_state_version": "sessione.md 19-07-2026 21:57",
+    "constraints": [
+      "Non alterare il comportamento a singolo utilizzo (vision una tantum, extraction occasionale) — l'ottimizzazione conta solo per utilizzo ripetuto/ravvicinato",
+      "Il fallback silenzioso e la firma pubblica esistenti in persona.py/vision.py/memory_extractor.py non vanno rotti",
+      "Nessuna nuova dipendenza esterna"
+    ],
+    "knowledge_snippets": {
+      "vision.py_stato_reale": "_restore_preferred() chiamata SEMPRE in finally dopo ogni analyze()/analyze_structured(), reload immediato incondizionato (~20-30s). Va sostituita con uno schedule ritardato (grace period) cancellabile se arriva una nuova richiesta vision nel frattempo.",
+      "memory_extractor.py_stato_reale": "_llm_text() usa `from .llm import engine; engine.stream(...)` — modello primario Qwen3-14B sullo stesso ThreadPoolExecutor(max_workers=1) della conversazione utente (llm.py:43). persona.py ha già un pattern equivalente e riusabile: MODEL_FAST su executor dedicato indipendente (persona.py `_executor`, `_ensure_fast_loaded`, `_blocking_rewrite`).",
+      "persona.py_da_estendere": "_blocking_rewrite ha semantica 'ritorna il testo originale se falisce' non adatta a generazione generica. Serve una nuova funzione pubblica generate_fast(system_prompt, user_text, max_tokens) -> str | None che riusa lo stesso _executor/_ensure_fast_loaded ma ritorna None (non un testo di fallback) in caso di errore, per lasciare a memory_extractor la decisione del fallback."
+    }
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "name": "Vision: grace period cancellabile prima del revert del modello",
+      "engine": "claude",
+      "agent": "backend",
+      "model": "sonnet",
+      "context_files": [
+        "brain/vision.py"
+      ],
+      "output": "_restore_preferred() sostituita da uno schedule asyncio ritardato (es. 45s) cancellabile; una nuova richiesta vision nel frattempo cancella il pending revert (il modello resta caricato, zero reload)",
+      "depends_on": [],
+      "parallel_with": [
+        "T02"
+      ],
+      "self_correction": {
+        "enabled": true,
+        "command": "python -m py_compile brain/vision.py",
+        "max_retries": 3
+      },
+      "status": "done"
+    },
+    {
+      "id": "T02",
+      "name": "Memory extraction su MODEL_FAST invece del modello primario",
+      "engine": "claude",
+      "agent": "backend",
+      "model": "sonnet",
+      "context_files": [
+        "brain/persona.py",
+        "brain/memory_extractor.py"
+      ],
+      "output": "persona.py: nuova funzione pubblica generate_fast(system_prompt, user_text, max_tokens) -> str | None che riusa _executor/_ensure_fast_loaded; memory_extractor.py: _llm_text() usa generate_fast() invece di engine.stream() — l'estrazione fatti/contraddizioni/gap/episodio non contende più l'executor del modello primario",
+      "depends_on": [],
+      "parallel_with": [
+        "T01"
+      ],
+      "self_correction": {
+        "enabled": true,
+        "command": "python -m py_compile brain/persona.py brain/memory_extractor.py",
+        "max_retries": 3
+      },
+      "status": "done"
+    },
+    {
+      "id": "T03",
+      "name": "Code review finale",
+      "engine": "claude",
+      "agent": "reviewer",
+      "model": "haiku",
+      "context_files": [
+        "brain/vision.py",
+        "brain/persona.py",
+        "brain/memory_extractor.py"
+      ],
+      "depends_on": [
+        "T01",
+        "T02"
+      ],
+      "self_correction": {
+        "enabled": false,
+        "command": null,
+        "max_retries": 0
+      },
+      "status": "done",
+      "verification": "Review ha segnalato un presunto blocco in vision.py (revert fallito -> modello vision bloccato per sempre) — verificato falso positivo: llm.py load_async() ha già un fallback automatico a MODEL_FAST su qualsiasi eccezione di caricamento (righe 104-110), il sistema si auto-ripristina. Nessun fix necessario. Tutti gli altri controlli OK."
+    }
+  ],
+  "verification_loop": {
+    "test_command": "python -m py_compile brain/vision.py brain/persona.py brain/memory_extractor.py",
+    "expected_exit_code": 0,
+    "must_pass_before_close": true
+  },
+  "result": {
+    "completed_at": null,
+    "files_modified": [],
+    "files_created": []
+  }
+}

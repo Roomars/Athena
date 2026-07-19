@@ -20,6 +20,11 @@ struct AriSettings: Codable {
     var panelOpacity:        Float  = 1.0
     // TTS engine — "apple" | "kokoro"
     var ttsEngine:           String = "apple"
+    // TTS tuning — velocità e tono (50–150, default 100)
+    var ttsRate:             Double = 100.0
+    var ttsPitch:            Double = 100.0
+    // Personalità vocale — "nessuna" | "professionale" | "amichevole" | "arguta"
+    var activePersona:       String = "nessuna"
     // Accent color
     var accentColorHex:      String = "#00D9FF"
     // Alert thresholds

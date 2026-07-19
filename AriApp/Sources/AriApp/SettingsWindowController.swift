@@ -16,10 +16,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let icon:  String
     }
     private let items: [SidebarItem] = [
-        .init(id: "generale",  label: "Generale",  icon: "house.fill"),
-        .init(id: "voce",      label: "Voce",      icon: "mic.fill"),
-        .init(id: "aspetto",   label: "Aspetto",   icon: "paintbrush.fill"),
-        .init(id: "avanzate",  label: "Avanzate",  icon: "gearshape.fill"),
+        .init(id: "generale",    label: "Generale",    icon: "house.fill"),
+        .init(id: "voce",        label: "Voce",        icon: "mic.fill"),
+        .init(id: "personalita", label: "Personalità", icon: "theatermasks.fill"),
+        .init(id: "aspetto",     label: "Aspetto",     icon: "paintbrush.fill"),
+        .init(id: "avanzate",    label: "Avanzate",    icon: "gearshape.fill"),
     ]
 
     // MARK: - Layout constants
@@ -37,6 +38,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     // Controls — Voce
     private var ttsSwitch:        NSSwitch!
     private var ttsEngineControl: NSSegmentedControl!
+    private var ttsRateSlider:    NSSlider!
+    private var ttsRateLabel:     NSTextField!
+    private var ttsPitchSlider:   NSSlider!
+    private var ttsPitchLabel:    NSTextField!
+
+    // Controls — Personalità
+    private var personaControl:   NSPopUpButton!
+    private var activePersonaId:  String = "nessuna"
+    // Fonte unica id↔label per il popup Personalità — evita mismatch tra costruzione e action
+    private let personaOptions: [(id: String, label: String)] = [
+        ("nessuna",        "Nessuna"),
+        ("professionale",  "Professionale"),
+        ("amichevole",     "Amichevole"),
+        ("arguta",         "Arguta"),
+    ]
     private var wakeSwitch:       NSSwitch!
     private var clapSwitch:       NSSwitch!
     private var hotkeyLabel:      NSTextField!
@@ -168,10 +184,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         sideVibrancy.addSubview(sv)
 
         // — Costruisce tutti i pannelli una sola volta
-        panels["generale"]  = buildGenerale()
-        panels["voce"]      = buildVoce()
-        panels["aspetto"]   = buildAspetto()
-        panels["avanzate"]  = buildAvanzate()
+        panels["generale"]    = buildGenerale()
+        panels["voce"]        = buildVoce()
+        panels["personalita"] = buildPersonalita()
+        panels["aspetto"]     = buildAspetto()
+        panels["avanzate"]    = buildAvanzate()
 
         tv.reloadData()
         selectItem(at: 0, animated: false)
@@ -282,6 +299,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stk.addArrangedSubview(row(label: "Motore TTS",
                                    detail: "Kokoro richiede: pip install kokoro soundfile",
                                    control: ttsEngineControl))
+        stk.setCustomSpacing(12, after: stk.arrangedSubviews.last!)
+
+        // Velocità voce
+        ttsRateLabel = valueLabel("\(Int(s.ttsRate))%")
+        ttsRateSlider = NSSlider(value: s.ttsRate,
+                                 minValue: 50, maxValue: 150,
+                                 target: self, action: #selector(ttsRateChanged))
+        ttsRateSlider.numberOfTickMarks = 5
+        stk.addArrangedSubview(row(label: "Velocità voce",
+                                   control: sliderPair(ttsRateSlider, ttsRateLabel)))
+        stk.setCustomSpacing(8, after: stk.arrangedSubviews.last!)
+
+        // Tono voce
+        ttsPitchLabel = valueLabel("\(Int(s.ttsPitch))%")
+        ttsPitchSlider = NSSlider(value: s.ttsPitch,
+                                  minValue: 50, maxValue: 150,
+                                  target: self, action: #selector(ttsPitchChanged))
+        ttsPitchSlider.numberOfTickMarks = 5
+        stk.addArrangedSubview(row(label: "Tono voce",
+                                   detail: "100% = tono naturale",
+                                   control: sliderPair(ttsPitchSlider, ttsPitchLabel)))
         stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
         stk.addArrangedSubview(separator())
         stk.setCustomSpacing(20, after: stk.arrangedSubviews.last!)
@@ -324,6 +362,32 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         hotkeyRow.translatesAutoresizingMaskIntoConstraints = false
         hotkeyRow.widthAnchor.constraint(equalToConstant: rowW).isActive = true
         stk.addArrangedSubview(hotkeyRow)
+
+        return wrap(stk)
+    }
+
+    // MARK: - Pannello PERSONALITÀ
+
+    private func buildPersonalita() -> NSView {
+        let s   = SettingsManager.shared.settings
+        let stk = makeStack()
+
+        stk.addArrangedSubview(sectionHeader("TONO DELLA RISPOSTA"))
+        stk.setCustomSpacing(10, after: stk.arrangedSubviews.last!)
+
+        personaControl = NSPopUpButton()
+        personaOptions.forEach { personaControl.addItem(withTitle: $0.label) }
+        activePersonaId = s.activePersona
+        let initialIdx = personaOptions.firstIndex { $0.id == s.activePersona } ?? 0
+        personaControl.selectItem(at: initialIdx)
+        personaControl.target = self
+        personaControl.action = #selector(personaChanged)
+        personaControl.translatesAutoresizingMaskIntoConstraints = false
+        personaControl.widthAnchor.constraint(equalToConstant: 180).isActive = true
+
+        stk.addArrangedSubview(row(label: "Personalità vocale",
+                                   detail: "Riscrive il tono della risposta prima che Ari la pronunci — il contenuto non cambia.",
+                                   control: personaControl))
 
         return wrap(stk)
     }
@@ -788,6 +852,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         WebSocketManager.shared.sendJSON(["type": "set_tts_engine", "engine": engine])
     }
 
+    @objc private func ttsRateChanged() {
+        let v = ttsRateSlider.doubleValue
+        ttsRateLabel.stringValue = "\(Int(v))%"
+        SettingsManager.shared.settings.ttsRate = v
+        SettingsManager.shared.save()
+        WebSocketManager.shared.sendJSON([
+            "type":  "set_voice_tuning",
+            "rate":  Int(ttsRateSlider.doubleValue),
+            "pitch": Int(ttsPitchSlider.doubleValue),
+        ])
+    }
+
+    @objc private func ttsPitchChanged() {
+        let v = ttsPitchSlider.doubleValue
+        ttsPitchLabel.stringValue = "\(Int(v))%"
+        SettingsManager.shared.settings.ttsPitch = v
+        SettingsManager.shared.save()
+        WebSocketManager.shared.sendJSON([
+            "type":  "set_voice_tuning",
+            "rate":  Int(ttsRateSlider.doubleValue),
+            "pitch": Int(ttsPitchSlider.doubleValue),
+        ])
+    }
+
+    @objc private func personaChanged() {
+        let idx = personaControl.indexOfSelectedItem
+        guard idx >= 0 && idx < personaOptions.count else { return }
+        activePersonaId = personaOptions[idx].id
+        SettingsManager.shared.settings.activePersona = activePersonaId
+        SettingsManager.shared.save()
+        WebSocketManager.shared.sendJSON(["type": "set_persona", "persona_id": activePersonaId])
+    }
+
     @objc private func cpuThreshChanged() {
         let v = cpuThreshSlider.doubleValue
         SettingsManager.shared.settings.cpuAlertThreshold = v
@@ -953,9 +1050,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func refresh() {
         let s = SettingsManager.shared.settings
-        ttsSwitch?.state                = s.ttsEnabled        ? .on : .off
+        ttsSwitch?.state                  = s.ttsEnabled        ? .on : .off
         ttsEngineControl?.selectedSegment = s.ttsEngine == "kokoro" ? 1 : 0
-        wakeSwitch?.state               = s.wakeWordEnabled   ? .on : .off
+        ttsRateSlider?.doubleValue        = s.ttsRate
+        ttsRateLabel?.stringValue         = "\(Int(s.ttsRate))%"
+        ttsPitchSlider?.doubleValue       = s.ttsPitch
+        ttsPitchLabel?.stringValue        = "\(Int(s.ttsPitch))%"
+        wakeSwitch?.state                 = s.wakeWordEnabled   ? .on : .off
         clapSwitch?.state               = s.clapWakeEnabled   ? .on : .off
         proactiveSwitch?.state          = s.proactiveEnabled  ? .on : .off
         snapSwitch?.state               = s.snapEnabled       ? .on : .off

@@ -3,8 +3,8 @@ import json
 import logging
 import time
 
-from .llm import engine
 from .memory_store import memory_store
+from .persona import generate_fast
 
 log = logging.getLogger("memory_extractor")
 
@@ -47,13 +47,14 @@ Questi due valori si contraddicono (uno esclude l'altro)? Rispondi SOLO con "si"
 
 
 async def _llm_text(messages: list[dict], max_tokens: int = 200) -> str:
-    raw = ""
-    async for kind, token in engine.stream(messages, max_tokens=max_tokens, thinking=False):
-        if kind == "chunk":
-            raw += token
-        elif kind == "done":
-            break
-    return raw.strip()
+    system_prompt = next(
+        (m["content"] for m in messages if m.get("role") == "system"), ""
+    )
+    user_prompt = next(
+        (m["content"] for m in messages if m.get("role") == "user"), ""
+    )
+    result = await generate_fast(system_prompt, user_prompt, max_tokens=max_tokens)
+    return (result or "").strip()
 
 
 async def extract_and_save(user_msg: str, assistant_msg: str) -> None:
